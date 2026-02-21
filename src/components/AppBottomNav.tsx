@@ -1,13 +1,14 @@
 import { View, Text, TouchableOpacity } from 'react-native'
 import { usePathname, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { BookMarked, FolderTree, GitMerge, Clock, Settings } from 'lucide-react-native'
 
 const tabs = [
-  { label: 'Repositories', icon: '■', route: '/' },
-  { label: 'Files', icon: '▣', route: '/files' },
-  { label: 'Source Control', icon: '⎇', route: '/source-control' },
-  { label: 'History', icon: '◷', route: '/history' },
-  { label: 'Settings', icon: '⚙', route: '/settings' },
+  { label: 'Repositories', icon: BookMarked, route: '/' },
+  { label: 'Files', icon: FolderTree, route: '/files' },
+  { label: 'Source Control', icon: GitMerge, route: '/source-control' },
+  { label: 'History', icon: Clock, route: '/history' },
+  { label: 'Settings', icon: Settings, route: '/settings' },
 ] as const
 
 export default function AppBottomNav() {
@@ -29,9 +30,7 @@ export default function AppBottomNav() {
               className="flex-1 items-center py-1.5"
               onPress={() => router.push(tab.route as any)}
             >
-              <Text className={active ? 'text-[#58a6ff] text-base' : 'text-[#8b949e] text-base'}>
-                {tab.icon}
-              </Text>
+              <tab.icon size={22} color={active ? '#58a6ff' : '#8b949e'} />
               <Text
                 numberOfLines={1}
                 className={

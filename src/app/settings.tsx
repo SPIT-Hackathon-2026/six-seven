@@ -8,9 +8,12 @@ import {
   TextInput,
 } from 'react-native'
 
-import { getAuthor, setAuthor } from '@/services/gitService'
-import { getFreeDiskSpace, REPO_BASE_PATH } from '@/utils/path'
+import { getAuthor, setAuthor } from '@/services/gitService';
+import { getFreeDiskSpace, REPO_BASE_PATH } from '@/utils/path';
 import { listRepos, deleteRepo } from '@/services/repoService'
+import { useRouter } from 'expo-router'
+import { setAuthenticated } from '@/utils/auth'
+import { User, HardDrive, Info, AlertTriangle, LogOut } from 'lucide-react-native'
 
 function formatBytes(bytes: number) {
   if (!bytes) return '0 B'
@@ -25,6 +28,7 @@ function formatBytes(bytes: number) {
 }
 
 export default function SettingsScreen() {
+  const router = useRouter()
   const [authorName, setAuthorName] = useState('')
   const [authorEmail, setAuthorEmail] = useState('')
   const [saved, setSaved] = useState(false)
@@ -85,6 +89,11 @@ export default function SettingsScreen() {
     ])
   }, [])
 
+  const handleLogout = useCallback(() => {
+    setAuthenticated(false)
+    router.replace('/login')
+  }, [router])
+
   return (
     <View className="flex-1 bg-[#0d1117]">
       {/* Header */}
@@ -98,9 +107,12 @@ export default function SettingsScreen() {
       >
         {/* Git Author */}
         <View className="mt-5">
-          <Text className="text-[#8b949e] text-xs font-bold uppercase tracking-wider mb-3">
-            Git Author
-          </Text>
+          <View className="flex-row items-center mb-3">
+            <User size={16} color="#8b949e" />
+            <Text className="text-[#8b949e] text-xs font-bold uppercase tracking-wider ml-2">
+              Git Author
+            </Text>
+          </View>
           <View className="rounded-lg bg-[#161b22] border border-[#30363d] p-4">
             <Text className="text-[#c9d1d9] text-sm mb-1.5">Name</Text>
             <TextInput
@@ -133,9 +145,12 @@ export default function SettingsScreen() {
 
         {/* Storage Info */}
         <View className="mt-6">
-          <Text className="text-[#8b949e] text-xs font-bold uppercase tracking-wider mb-3">
-            Storage
-          </Text>
+          <View className="flex-row items-center mb-3">
+            <HardDrive size={16} color="#8b949e" />
+            <Text className="text-[#8b949e] text-xs font-bold uppercase tracking-wider ml-2">
+              Storage
+            </Text>
+          </View>
           <View className="rounded-lg bg-[#161b22] border border-[#30363d] p-4">
             <View className="flex-row justify-between py-1.5">
               <Text className="text-[#8b949e] text-sm">Free disk space</Text>
@@ -160,9 +175,12 @@ export default function SettingsScreen() {
 
         {/* About */}
         <View className="mt-6">
-          <Text className="text-[#8b949e] text-xs font-bold uppercase tracking-wider mb-3">
-            About
-          </Text>
+          <View className="flex-row items-center mb-3">
+            <Info size={16} color="#8b949e" />
+            <Text className="text-[#8b949e] text-xs font-bold uppercase tracking-wider ml-2">
+              About
+            </Text>
+          </View>
           <View className="rounded-lg bg-[#161b22] border border-[#30363d] p-4">
             <View className="flex-row justify-between py-1.5">
               <Text className="text-[#8b949e] text-sm">App</Text>
@@ -187,9 +205,12 @@ export default function SettingsScreen() {
 
         {/* Danger zone */}
         <View className="mt-6">
-          <Text className="text-[#f85149] text-xs font-bold uppercase tracking-wider mb-3">
-            Danger Zone
-          </Text>
+          <View className="flex-row items-center mb-3">
+            <AlertTriangle size={16} color="#f85149" />
+            <Text className="text-[#f85149] text-xs font-bold uppercase tracking-wider ml-2">
+              Danger Zone
+            </Text>
+          </View>
           <View className="rounded-lg bg-[#161b22] border border-[#f8514933] p-4">
             <Text className="text-[#c9d1d9] text-sm mb-3">
               Delete all local repositories. This action cannot be undone.
@@ -204,6 +225,15 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Logout Button */}
+        <TouchableOpacity
+          className="mt-8 mb-6 py-3.5 items-center justify-center rounded-lg bg-[#21262d] border border-[#30363d] flex-row gap-2"
+          onPress={handleLogout}
+        >
+          <LogOut size={18} color="#ef4444" />
+          <Text className="text-[#ef4444] font-bold text-base">Sign Out</Text>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );

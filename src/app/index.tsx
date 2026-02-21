@@ -10,6 +10,7 @@ import {
   RefreshControl,
 } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
+import { Upload, FlaskConical, Settings, Plus, Download, FolderGit2, Folder as FolderClosed, ChevronRight } from 'lucide-react-native'
 
 import {
   currentBranch,
@@ -194,41 +195,43 @@ export default function HomeScreen() {
         <Text className="text-[#f0f6fc] text-5xl font-extrabold">GitLane</Text>
         <View className="flex-row items-center gap-3">
           <TouchableOpacity
-            className="w-9 h-9 rounded-full border border-[#30363d] items-center justify-center"
+            className="w-9 h-9 rounded-full bg-[#161b22] border border-[#30363d] items-center justify-center"
             onPress={() => router.push('/transfer')}
           >
-            <Text className="text-[#c9d1d9] text-lg">📤</Text>
+            <Upload size={18} color="#c9d1d9" strokeWidth={2.5} />
           </TouchableOpacity>
           <TouchableOpacity
-            className="w-9 h-9 rounded-full border border-[#30363d] items-center justify-center"
+            className="w-9 h-9 rounded-full bg-[#161b22] border border-[#30363d] items-center justify-center"
             onPress={() => router.push('/testing')}
           >
-            <Text className="text-[#c9d1d9] text-lg">🧪</Text>
+            <FlaskConical size={18} color="#c9d1d9" strokeWidth={2.5} />
           </TouchableOpacity>
           <TouchableOpacity
-            className="w-9 h-9 rounded-full border border-[#30363d] items-center justify-center"
+            className="w-9 h-9 rounded-full bg-[#161b22] border border-[#30363d] items-center justify-center"
             onPress={() => router.push('/settings')}
           >
-            <Text className="text-[#c9d1d9] text-lg">⚙</Text>
+            <Settings size={18} color="#c9d1d9" strokeWidth={2.5} />
           </TouchableOpacity>
         </View>
       </View>
 
       <View className="px-5 pt-4 flex-row gap-3">
         <TouchableOpacity
-          className="flex-1 py-3 rounded-xl bg-[#21262d] items-center"
+          className="flex-1 py-3.5 rounded-xl bg-[#21262d] flex-row justify-center gap-2 items-center"
           onPress={() => {
             setShowInitDialog(true)
             setInitName('')
           }}
         >
-          <Text className="text-[#f0f6fc] text-lg font-bold">+ Init</Text>
+          <Plus size={20} color="#f0f6fc" />
+          <Text className="text-[#f0f6fc] text-base font-bold">Init</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          className="flex-1 py-3 rounded-xl bg-[#21262d] items-center"
+          className="flex-1 py-3.5 rounded-xl bg-[#21262d] flex-row justify-center gap-2 items-center"
           onPress={() => router.push('/transfer')}
         >
-          <Text className="text-[#f0f6fc] text-lg font-bold">Import</Text>
+          <Download size={20} color="#f0f6fc" />
+          <Text className="text-[#f0f6fc] text-base font-bold">Import</Text>
         </TouchableOpacity>
       </View>
 
@@ -338,30 +341,33 @@ export default function HomeScreen() {
               onLongPress={() => showRepoActions(repo.name)}
             >
               <View className="flex-row items-center justify-between">
-                <View className="flex-row items-center gap-2">
-                  <Text className="text-[#c9d1d9] text-lg">
-                    {repo.isGitRepo ? '📁' : '📂'}
-                  </Text>
-                  <Text className="text-[#f0f6fc] text-[28px] font-extrabold">
+                <View className="flex-row items-center gap-3">
+                  <View className="w-10 h-10 rounded-lg bg-[#21262d] items-center justify-center">
+                    {repo.isGitRepo ? (
+                      <FolderGit2 size={24} color="#58a6ff" />
+                    ) : (
+                      <FolderClosed size={24} color="#8b949e" />
+                    )}
+                  </View>
+                  <Text className="text-[#f0f6fc] text-2xl font-bold">
                     {repo.name}
                   </Text>
                 </View>
-                <Text className="text-[#8b949e] text-xl">›</Text>
+                <ChevronRight size={24} color="#8b949e" />
               </View>
 
-              <Text className="text-[#c9d1d9] text-2xl mt-2 font-semibold">
-                Branch: {repo.branch}
+              <Text className="text-[#c9d1d9] text-sm mt-3 font-semibold">
+                Branch: <Text className="text-[#f0f6fc] font-bold">{repo.branch}</Text>
               </Text>
 
-              <View className="flex-row items-center mt-2">
+              <View className="flex-row items-center mt-2 border-t border-[#21262d] pt-3">
                 <Text
                   style={{ color: repo.statusColor }}
-                  className="text-2xl font-semibold"
+                  className="text-sm font-semibold mr-2"
                 >
-                  {repo.statusText}
+                  ● {repo.statusText}
                 </Text>
-                <Text className="text-[#8b949e] text-2xl">
-                  {' '}
+                <Text className="text-[#8b949e] text-sm">
                   · {repo.sizeText} · {repo.ageText}
                 </Text>
               </View>
