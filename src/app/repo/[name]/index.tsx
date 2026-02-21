@@ -10,7 +10,28 @@ import {
   RefreshControl,
 } from 'react-native'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
-import { FolderGit2, ChevronLeft, ChevronRight, ChevronDown, Check, Trash2, GitBranch, Share2, Tag, LayoutDashboard, History, Plus, CircleSlash2, Circle, Clock } from 'lucide-react-native'
+import {
+  FolderGit2,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  Check,
+  Trash2,
+  GitBranch,
+  Share2,
+  Tag,
+  LayoutDashboard,
+  History,
+  Plus,
+  CircleSlash2,
+  Circle,
+  Clock,
+  ArrowUpFromLine,
+  ArrowDownToLine,
+  RefreshCw,
+  Link2,
+  Github,
+} from 'lucide-react-native'
 
 import {
   currentBranch,
@@ -32,9 +53,19 @@ import {
   diffSummary,
   detectConflicts,
   rebase,
+  pushRemote,
+  pullRemote,
+  fetchRemote,
+  addRemote,
+  getRemoteUrl,
+  listRemotes,
+  getRemoteDivergence,
 } from '@/services/gitService'
+import { isGitHubLinked } from '@/services/githubAuth'
 import { stash, stashPop } from '@/services/stashService'
 import { deleteRepo, getRepoSize } from '@/services/repoService'
+import { isOnline } from '@/services/networkService'
+import { syncRepo, enqueuePush, getPendingCount, getLastSyncInfo } from '@/services/offlineSyncService'
 import SyntaxHighlighter from '@/components/SyntaxHighlighter'
 
 /* ───────────────── helpers ───────────────── */
@@ -116,7 +147,17 @@ function getExt(name: string) {
   return idx >= 0 ? name.slice(idx + 1).toLowerCase() : ''
 }
 
-import { FileCode, FileJson, FileText, Image as ImageIcon, Code2, Globe, Braces, Terminal, File as FileIcon } from 'lucide-react-native'
+import {
+  FileCode,
+  FileJson,
+  FileText,
+  Image as ImageIcon,
+  Code2,
+  Globe,
+  Braces,
+  Terminal,
+  File as FileIcon,
+} from 'lucide-react-native'
 
 function getFileIcon(name: string) {
   const ext = getExt(name)
@@ -189,6 +230,12 @@ export default function RepoDetailScreen() {
   /* — Overview tab — */
   const [commitMsg, setCommitMsg] = useState('')
   const [committing, setCommitting] = useState(false)
+  const [remoteUrl, setRemoteUrl] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState<'push' | 'pull' | 'fetch' | null>(null)
+  const [showAddRemote, setShowAddRemote] = useState(false)
+  const [newRemoteUrl, setNewRemoteUrl] = useState('')
+  const [publishing, setPublishing] = useState(false)
+  const [ghLinked, setGhLinked] = useState(false)
 
   /* — Compare modal — */
   const [showCompare, setShowCompare] = useState(false)
@@ -249,6 +296,12 @@ export default function RepoDetailScreen() {
       } catch {
         setTreeFiles([])
       }
+
+      // Check remote & GitHub link
+      const rUrl = await getRemoteUrl(name).catch(() => null)
+      setRemoteUrl(rUrl)
+      const linked = await isGitHubLinked().catch(() => false)
+      setGhLinked(linked)
     } catch (err: any) {
       Alert.alert('Error', err?.message ?? 'Failed to load repo data')
     } finally {
@@ -303,6 +356,16 @@ export default function RepoDetailScreen() {
     try {
       await stageAll(name)
       await commitAll(name, msg)
+
+      // Auto-enqueue push if remote exists
+      if (remoteUrl && ghLinked) {
+        try {
+          const log = await getLog(name, { depth: 1 })
+          const oid = log[0]?.oid ?? 'unknown'
+          await enqueuePush(name, branch, oid, msg)
+        } catch { /* silent */ }
+      }
+
       setCommitMsg('')
       Alert.alert('Success', 'Changes committed')
       await loadRepoData()
@@ -311,7 +374,131 @@ export default function RepoDetailScreen() {
     } finally {
       setCommitting(false)
     }
-  }, [name, commitMsg, loadRepoData])
+  }, [name, commitMsg, branch, remoteUrl, ghLinked, loadRepoData])
+
+  const handlePush = useCallback(async () => {
+    if (!name) return
+    if (!isOnline()) {
+      // Queue for later
+      const oid = commits[0]?.oid ?? 'unknown'
+      await enqueuePush(name, branch, oid, commits[0]?.message ?? 'push')
+      Alert.alert('Offline', 'Push queued — will auto-sync when you come back online.')
+      return
+    }
+    setSyncing('push')
+    try {
+      await pushRemote(name)
+      Alert.alert('Pushed', `Pushed to origin/${branch}`)
+    } catch (err: any) {
+      if (err?.message?.includes('not a simple fast-forward') || err?.message?.includes('non-fast-forward')) {
+        Alert.alert(
+          'Push Rejected',
+          'Remote has new commits. Pull first to merge changes, then push again.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Pull & Push',
+              onPress: async () => {
+                setSyncing('pull')
+                try {
+                  await pullRemote(name)
+                  await pushRemote(name)
+                  Alert.alert('Synced', 'Pulled and pushed successfully')
+                  await loadRepoData()
+                } catch (pullErr: any) {
+                  Alert.alert('Sync failed', pullErr?.message ?? '')
+                } finally {
+                  setSyncing(null)
+                }
+              },
+            },
+          ],
+        )
+      } else {
+        Alert.alert('Push failed', err?.message ?? '')
+      }
+    } finally {
+      setSyncing(null)
+    }
+  }, [name, branch, commits, loadRepoData])
+
+  const handlePull = useCallback(async () => {
+    if (!name) return
+    if (!isOnline()) {
+      Alert.alert('Offline', 'Cannot pull while offline. Will sync when back online.')
+      return
+    }
+    setSyncing('pull')
+    try {
+      await pullRemote(name)
+      Alert.alert('Pulled', `Pulled from origin/${branch}`)
+      await loadRepoData()
+    } catch (err: any) {
+      if (err?.message?.includes('conflict') || err?.message?.includes('merge')) {
+        Alert.alert('Merge Conflict', 'Pull resulted in conflicts. Resolve them in Source Control.', [
+          { text: 'OK' },
+        ])
+      } else {
+        Alert.alert('Pull failed', err?.message ?? '')
+      }
+    } finally {
+      setSyncing(null)
+    }
+  }, [name, branch, loadRepoData])
+
+  const handleSync = useCallback(async () => {
+    if (!name) return
+    if (!isOnline()) {
+      Alert.alert('Offline', 'Will auto-sync when you come back online.')
+      return
+    }
+    setSyncing('fetch')
+    try {
+      const result = await syncRepo(name)
+      if (result.status === 'conflict') {
+        Alert.alert('Conflict', result.detail ?? 'Merge conflict detected. Resolve in Source Control.')
+      } else {
+        Alert.alert('Synced', `Status: ${result.status}`)
+      }
+      await loadRepoData()
+    } catch (err: any) {
+      Alert.alert('Sync failed', err?.message ?? '')
+    } finally {
+      setSyncing(null)
+    }
+  }, [name, loadRepoData])
+
+  const handleFetch = useCallback(async () => {
+    if (!name) return
+    setSyncing('fetch')
+    try {
+      await fetchRemote(name)
+      Alert.alert('Fetched', 'Remote refs updated')
+    } catch (err: any) {
+      Alert.alert('Fetch failed', err?.message ?? '')
+    } finally {
+      setSyncing(null)
+    }
+  }, [name])
+
+  const handleAddRemote = useCallback(async () => {
+    if (!name || !newRemoteUrl.trim()) return
+    try {
+      // Remove existing origin if any, then add the new one
+      const remotes = await listRemotes(name).catch(() => [])
+      if (remotes.some((r: any) => r.remote === 'origin')) {
+        const { deleteRemote: delRemote } = await import('@/services/gitService')
+        await delRemote(name, 'origin')
+      }
+      await addRemote(name, 'origin', newRemoteUrl.trim())
+      setRemoteUrl(newRemoteUrl.trim())
+      setNewRemoteUrl('')
+      setShowAddRemote(false)
+      Alert.alert('Remote added', `origin → ${newRemoteUrl.trim()}`)
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to add remote')
+    }
+  }, [name, newRemoteUrl])
 
   const handleCreateBranch = useCallback(async () => {
     if (!name || !newBranchName.trim()) return
@@ -414,7 +601,11 @@ export default function RepoDetailScreen() {
       setShowCompare(true)
       setLoadingCompare(true)
       try {
-        const summary = await diffSummary(name, branch ?? 'main', targetBranch as any)
+        const summary = await diffSummary(
+          name,
+          branch ?? 'main',
+          targetBranch as any,
+        )
         setCompareResults(summary)
       } catch {
         setCompareResults([])
@@ -536,7 +727,7 @@ export default function RepoDetailScreen() {
       if (!name) return
       router.push({
         pathname: '/repo/[name]/editor' as any,
-        params: { name, path: filepath },
+        params: { name, file: filepath },
       })
     },
     [name, router],
@@ -546,25 +737,40 @@ export default function RepoDetailScreen() {
   if (!name) {
     return (
       <View className="flex-1 bg-neutral-100 dark:bg-black items-center justify-center">
-        <Text className="text-black dark:text-neutral-100">Invalid repository</Text>
+        <Text className="text-black dark:text-neutral-100">
+          Invalid repository
+        </Text>
       </View>
     )
   }
 
   /* ═══════ TABS ═══════ */
   const TABS = ['code', 'branches', 'tags', 'overview'] as const
-  const TabIconCode = ({ active }: { active: boolean }) => <FolderGit2 size={16} color={active ? '#58a6ff' : '#8b949e'} />
-  const TabIconBranches = ({ active }: { active: boolean }) => <GitBranch size={16} color={active ? '#58a6ff' : '#8b949e'} />
-  const TabIconTags = ({ active }: { active: boolean }) => <Tag size={16} color={active ? '#58a6ff' : '#8b949e'} />
-  const TabIconOverview = ({ active }: { active: boolean }) => <LayoutDashboard size={16} color={active ? '#58a6ff' : '#8b949e'} />
+  const TabIconCode = ({ active }: { active: boolean }) => (
+    <FolderGit2 size={16} color={active ? '#58a6ff' : '#8b949e'} />
+  )
+  const TabIconBranches = ({ active }: { active: boolean }) => (
+    <GitBranch size={16} color={active ? '#58a6ff' : '#8b949e'} />
+  )
+  const TabIconTags = ({ active }: { active: boolean }) => (
+    <Tag size={16} color={active ? '#58a6ff' : '#8b949e'} />
+  )
+  const TabIconOverview = ({ active }: { active: boolean }) => (
+    <LayoutDashboard size={16} color={active ? '#58a6ff' : '#8b949e'} />
+  )
 
   const getTabIcon = (tab: string, active: boolean) => {
     switch (tab) {
-      case 'code': return <TabIconCode active={active} />
-      case 'branches': return <TabIconBranches active={active} />
-      case 'tags': return <TabIconTags active={active} />
-      case 'overview': return <TabIconOverview active={active} />
-      default: return null
+      case 'code':
+        return <TabIconCode active={active} />
+      case 'branches':
+        return <TabIconBranches active={active} />
+      case 'tags':
+        return <TabIconTags active={active} />
+      case 'overview':
+        return <TabIconOverview active={active} />
+      default:
+        return null
     }
   }
 
@@ -577,7 +783,9 @@ export default function RepoDetailScreen() {
           <ChevronLeft size={24} color="#58a6ff" />
         </TouchableOpacity>
         <View className="flex-1 items-center">
-          <Text className="text-black dark:text-neutral-100 text-lg font-bold">{name}</Text>
+          <Text className="text-black dark:text-neutral-100 text-lg font-bold">
+            {name}
+          </Text>
           <Text className="text-neutral-500 text-xs">{repoSize}</Text>
         </View>
         <TouchableOpacity onPress={handleDeleteRepo} className="p-2">
@@ -592,7 +800,9 @@ export default function RepoDetailScreen() {
           onPress={() => setShowBranchPicker(!showBranchPicker)}
         >
           <GitBranch size={14} color="#58a6ff" className="mr-1.5" />
-          <Text className="text-black dark:text-neutral-100 text-sm font-semibold mr-1.5">{branch}</Text>
+          <Text className="text-black dark:text-neutral-100 text-sm font-semibold mr-1.5">
+            {branch}
+          </Text>
           <ChevronDown size={14} color="#8b949e" />
         </TouchableOpacity>
         <View className="flex-row ml-4 gap-3 flex-1">
@@ -650,7 +860,9 @@ export default function RepoDetailScreen() {
                 </View>
                 {b === branch && (
                   <View className="px-2 py-1 rounded-full bg-[#1f6feb22]">
-                    <Text className="text-[#58a6ff] text-[10px] font-bold uppercase">curr</Text>
+                    <Text className="text-[#58a6ff] text-[10px] font-bold uppercase">
+                      curr
+                    </Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -731,14 +943,19 @@ export default function RepoDetailScreen() {
                     onPress={() => handleEditFile(viewingFile)}
                     className="px-3 py-1.5 rounded-lg bg-neutral-100 dark:bg-zinc-800 border border-neutral-200 dark:border-zinc-700 ml-2"
                   >
-                    <Text className="text-[#58a6ff] text-xs font-semibold">Edit</Text>
+                    <Text className="text-[#58a6ff] text-xs font-semibold">
+                      Edit
+                    </Text>
                   </TouchableOpacity>
                 </View>
 
                 {/* Breadcrumb */}
                 <View className="flex-row flex-wrap mb-4 px-1">
                   {viewingFile.split('/').map((seg, i, arr) => (
-                    <Text key={i} className="text-neutral-500 text-xs font-medium">
+                    <Text
+                      key={i}
+                      className="text-neutral-500 text-xs font-medium"
+                    >
                       {i > 0 && <Text className="text-neutral-400"> / </Text>}
                       <Text
                         className={
@@ -762,7 +979,9 @@ export default function RepoDetailScreen() {
                       <Text className="text-neutral-500 text-xs font-bold uppercase tracking-wider">
                         {fileContent.split('\n').length} lines
                       </Text>
-                      <Text className="text-neutral-500 text-xs font-semibold">{branch}</Text>
+                      <Text className="text-neutral-500 text-xs font-semibold">
+                        {branch}
+                      </Text>
                     </View>
                     {/* Code lines with syntax highlighting */}
                     <ScrollView horizontal>
@@ -794,7 +1013,9 @@ export default function RepoDetailScreen() {
                       <TouchableOpacity
                         onPress={() => setTreePath(treePath.slice(0, i + 1))}
                       >
-                        <Text className="text-[#58a6ff] text-sm font-semibold">{seg}</Text>
+                        <Text className="text-[#58a6ff] text-sm font-semibold">
+                          {seg}
+                        </Text>
                       </TouchableOpacity>
                     </View>
                   ))}
@@ -831,7 +1052,9 @@ export default function RepoDetailScreen() {
                         setTreePath(treePath.slice(0, treePath.length - 1))
                       }
                     >
-                      <Text className="text-[#58a6ff] text-sm font-bold ml-1">..</Text>
+                      <Text className="text-[#58a6ff] text-sm font-bold ml-1">
+                        ..
+                      </Text>
                     </TouchableOpacity>
                   )}
                   {currentLevel.length === 0 ? (
@@ -854,7 +1077,11 @@ export default function RepoDetailScreen() {
                         }}
                       >
                         <View className="w-6 items-center justify-center mr-3">
-                          {node.type === 'dir' ? <FolderGit2 size={18} color="#58a6ff" /> : getFileIcon(node.name)}
+                          {node.type === 'dir' ? (
+                            <FolderGit2 size={18} color="#58a6ff" />
+                          ) : (
+                            getFileIcon(node.name)
+                          )}
                         </View>
                         <Text
                           className={
@@ -903,13 +1130,18 @@ export default function RepoDetailScreen() {
               onPress={() => setShowNewBranch(!showNewBranch)}
             >
               <Plus size={16} color="#58a6ff" />
-              <Text className="text-[#58a6ff] text-sm font-bold">New Branch</Text>
+              <Text className="text-[#58a6ff] text-sm font-bold">
+                New Branch
+              </Text>
             </TouchableOpacity>
 
             {showNewBranch && (
               <View className="mb-4 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 p-4 ">
                 <Text className="text-neutral-500 text-xs font-semibold mb-3">
-                  Create from <Text className="text-black dark:text-neutral-100 font-bold">{branch}</Text>
+                  Create from{' '}
+                  <Text className="text-black dark:text-neutral-100 font-bold">
+                    {branch}
+                  </Text>
                 </Text>
                 <View className="flex-row gap-2">
                   <TextInput
@@ -949,7 +1181,10 @@ export default function RepoDetailScreen() {
                       className="flex-1 flex-row items-center gap-3"
                       onPress={() => handleCheckout(b)}
                     >
-                      <GitBranch size={16} color={b === branch ? '#58a6ff' : '#8b949e'} />
+                      <GitBranch
+                        size={16}
+                        color={b === branch ? '#58a6ff' : '#8b949e'}
+                      />
                       <Text
                         className={
                           b === branch
@@ -1002,13 +1237,17 @@ export default function RepoDetailScreen() {
                           className="px-3 py-1.5 rounded-md bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800"
                           onPress={() => handleRebase(b)}
                         >
-                          <Text className="text-[#d2a8ff] text-xs font-medium">Rebase</Text>
+                          <Text className="text-[#d2a8ff] text-xs font-medium">
+                            Rebase
+                          </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           className="px-3 py-1.5 rounded-md bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800"
                           onPress={() => handleDeleteBranch(b)}
                         >
-                          <Text className="text-[#f85149] text-xs font-medium">Delete</Text>
+                          <Text className="text-[#f85149] text-xs font-medium">
+                            Delete
+                          </Text>
                         </TouchableOpacity>
                       </>
                     )}
@@ -1114,7 +1353,11 @@ export default function RepoDetailScreen() {
             {showTagInput && (
               <View className="mb-4 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 p-4 ">
                 <Text className="text-neutral-500 text-xs font-semibold mb-3">
-                  Tag at HEAD (<Text className="text-black dark:text-neutral-100 font-bold">{branch}</Text>)
+                  Tag at HEAD (
+                  <Text className="text-black dark:text-neutral-100 font-bold">
+                    {branch}
+                  </Text>
+                  )
                 </Text>
                 <View className="flex-row gap-2">
                   <TextInput
@@ -1138,7 +1381,9 @@ export default function RepoDetailScreen() {
             <View className="rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden ">
               {tags.length === 0 ? (
                 <View className="px-4 py-8 items-center">
-                  <Text className="text-neutral-500 text-sm font-semibold">No tags yet</Text>
+                  <Text className="text-neutral-500 text-sm font-semibold">
+                    No tags yet
+                  </Text>
                   <Text className="text-neutral-400 text-xs mt-1.5 text-center">
                     Tags mark specific points in history
                   </Text>
@@ -1151,13 +1396,17 @@ export default function RepoDetailScreen() {
                   >
                     <View className="flex-row items-center gap-3">
                       <Tag size={16} color="#8b949e" />
-                      <Text className="text-neutral-700 dark:text-neutral-300 font-medium text-sm">{t}</Text>
+                      <Text className="text-neutral-700 dark:text-neutral-300 font-medium text-sm">
+                        {t}
+                      </Text>
                     </View>
                     <TouchableOpacity
                       className="px-3 py-1.5 rounded-md bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800"
                       onPress={() => handleDeleteTag(t)}
                     >
-                      <Text className="text-[#f85149] text-xs font-semibold">Delete</Text>
+                      <Text className="text-[#f85149] text-xs font-semibold">
+                        Delete
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 ))
@@ -1186,15 +1435,170 @@ export default function RepoDetailScreen() {
                 className="py-3.5 px-5 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 items-center justify-center "
                 onPress={handleStash}
               >
-                <Text className="text-neutral-700 dark:text-neutral-300 text-sm font-semibold">Stash</Text>
+                <Text className="text-neutral-700 dark:text-neutral-300 text-sm font-semibold">
+                  Stash
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 className="py-3.5 px-5 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 items-center justify-center "
                 onPress={handleStashPop}
               >
-                <Text className="text-neutral-700 dark:text-neutral-300 text-sm font-semibold">Pop</Text>
+                <Text className="text-neutral-700 dark:text-neutral-300 text-sm font-semibold">
+                  Pop
+                </Text>
               </TouchableOpacity>
             </View>
+
+            {/* GitHub Sync */}
+            {ghLinked && (
+              <View className="mt-4">
+                {remoteUrl ? (
+                  <View>
+                    <View className="flex-row items-center mb-2">
+                      <Link2 size={12} color="#8b949e" />
+                      <Text className="text-neutral-500 text-[11px] ml-1 flex-1" numberOfLines={1}>
+                        {remoteUrl}
+                      </Text>
+                      {!checkOnline() && (
+                        <Text className="text-[10px] text-red-500 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded font-medium ml-1">
+                          offline
+                        </Text>
+                      )}
+                    </View>
+                    {/* Sync button (fetch → pull if needed → push) */}
+                    <TouchableOpacity
+                      className="py-3 rounded-xl bg-[#58a6ff] items-center flex-row justify-center gap-2 mb-2"
+                      onPress={handleSync}
+                      disabled={syncing !== null}
+                    >
+                      {syncing !== null ? (
+                        <ActivityIndicator color="#fff" size="small" />
+                      ) : (
+                        <>
+                          <RefreshCw size={14} color="#fff" />
+                          <Text className="text-white text-sm font-bold">Sync</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                    <View className="flex-row gap-2">
+                      <TouchableOpacity
+                        className="flex-1 py-3 rounded-xl bg-[#2ea043] items-center flex-row justify-center gap-2"
+                        onPress={handlePush}
+                        disabled={syncing !== null}
+                      >
+                        {syncing === 'push' ? (
+                          <ActivityIndicator color="#fff" size="small" />
+                        ) : (
+                          <>
+                            <ArrowUpFromLine size={14} color="#fff" />
+                            <Text className="text-white text-sm font-bold">Push</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        className="flex-1 py-3 rounded-xl bg-[#1f6feb] items-center flex-row justify-center gap-2"
+                        onPress={handlePull}
+                        disabled={syncing !== null}
+                      >
+                        {syncing === 'pull' ? (
+                          <ActivityIndicator color="#fff" size="small" />
+                        ) : (
+                          <>
+                            <ArrowDownToLine size={14} color="#fff" />
+                            <Text className="text-white text-sm font-bold">Pull</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        className="py-3 px-4 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 items-center justify-center"
+                        onPress={handleFetch}
+                        disabled={syncing !== null}
+                      >
+                        {syncing === 'fetch' ? (
+                          <ActivityIndicator color="#58a6ff" size="small" />
+                        ) : (
+                          <RefreshCw size={16} color="#8b949e" />
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <View>
+                    {/* Publish to GitHub */}
+                    <TouchableOpacity
+                      className="py-3 mb-2 rounded-xl bg-[#2ea043] items-center flex-row justify-center gap-2"
+                      onPress={async () => {
+                        if (!name) return
+                        setPublishing(true)
+                        try {
+                          const ghRepo = await createGitHubRepo(name, { isPrivate: true })
+                          await addRemote(name, 'origin', ghRepo.clone_url)
+                          setRemoteUrl(ghRepo.clone_url)
+                          if (checkOnline()) {
+                            try {
+                              await pushRemote(name)
+                            } catch { /* may fail if empty repo */ }
+                          }
+                          Alert.alert('Published!', `Created ${ghRepo.full_name} on GitHub`)
+                          await loadRepoData()
+                        } catch (err: any) {
+                          Alert.alert('Publish failed', err?.message ?? 'Could not create repo on GitHub')
+                        } finally {
+                          setPublishing(false)
+                        }
+                      }}
+                      disabled={publishing}
+                    >
+                      {publishing ? (
+                        <ActivityIndicator color="#fff" size="small" />
+                      ) : (
+                        <>
+                          <Github size={14} color="#fff" />
+                          <Text className="text-white text-sm font-bold">Publish to GitHub</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+
+                    {/* Or add custom remote */}
+                    {showAddRemote ? (
+                      <View>
+                        <TextInput
+                          className="bg-white dark:bg-black text-black dark:text-white px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-zinc-800 text-sm"
+                          placeholder="https://github.com/user/repo.git"
+                          placeholderTextColor="#8b949e"
+                          value={newRemoteUrl}
+                          onChangeText={setNewRemoteUrl}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                        <View className="flex-row gap-2 mt-2">
+                          <TouchableOpacity
+                            className="flex-1 py-2.5 rounded-lg bg-[#2ea043] items-center"
+                            onPress={handleAddRemote}
+                          >
+                            <Text className="text-white text-sm font-semibold">Add Remote</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            className="py-2.5 px-4 rounded-lg bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800"
+                            onPress={() => setShowAddRemote(false)}
+                          >
+                            <Text className="text-neutral-500 text-sm">Cancel</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        className="py-3 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 items-center flex-row justify-center gap-2"
+                        onPress={() => setShowAddRemote(true)}
+                      >
+                        <Link2 size={14} color="#8b949e" />
+                        <Text className="text-neutral-500 text-sm font-medium">Add Remote Origin</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+              </View>
+            )}
 
             {/* Commit message */}
             <TextInput
@@ -1208,7 +1612,13 @@ export default function RepoDetailScreen() {
             {/* Status summary */}
             <View className="mt-5 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden ">
               <View className="px-4 py-3 bg-neutral-50 dark:bg-black border-b border-neutral-200 dark:border-zinc-800">
-                <Text className={modFiles.length === 0 ? "text-[#7ee787] text-sm font-bold" : "text-black dark:text-neutral-100 text-sm font-bold"}>
+                <Text
+                  className={
+                    modFiles.length === 0
+                      ? 'text-[#7ee787] text-sm font-bold'
+                      : 'text-black dark:text-neutral-100 text-sm font-bold'
+                  }
+                >
                   {modFiles.length === 0
                     ? '✓ Working tree clean'
                     : `${modFiles.length} changed file${modFiles.length !== 1 ? 's' : ''}`}
