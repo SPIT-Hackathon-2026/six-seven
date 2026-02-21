@@ -14,7 +14,11 @@ import * as Sharing from 'expo-sharing'
 import * as DocumentPicker from 'expo-document-picker'
 import JSZip from 'jszip'
 import QRCode from 'react-native-qrcode-svg'
-import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera'
+import {
+  CameraView,
+  useCameraPermissions,
+  BarcodeScanningResult,
+} from 'expo-camera'
 import { useFocusEffect } from 'expo-router'
 
 import { listRepos, getRepoPath } from '../services/repoService'
@@ -31,6 +35,10 @@ function formatBytes(bytes: number) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }
 
+/** Max bytes per QR chunk – QR version 40 alphanumeric ≈ 4296 chars,
+ *  but base64 is byte-mode so practical limit is ~2200 to keep it scannable. */
+const QR_CHUNK_SIZE = 2200
+
 // ─── component ──────────────────────────────────────────────────────
 
 type Repo = { name: string; path: string; isGitRepo: boolean }
@@ -40,15 +48,18 @@ export default function TransferScreen() {
   const [selected, setSelected] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
-  // QR Export
+  // QR Export (chunked)
   const [qrVisible, setQrVisible] = useState(false)
-  const [qrData, setQrData] = useState<string | null>(null)
-  // QR Import
+  const [qrChunks, setQrChunks] = useState<string[]>([])
+  const [qrPage, setQrPage] = useState(0)
+  // QR Import (multi-scan)
   const [scannerVisible, setScannerVisible] = useState(false)
   const [scanned, setScanned] = useState(false)
   const [cameraPermission, requestCameraPermission] = useCameraPermissions()
   const cameraRef = useRef(null)
-  // ── QR EXPORT ─────────────────────────────────────────────────────
+  const [importChunks, setImportChunks] = useState<Record<number, string>>({})
+  const [importTotal, setImportTotal] = useState(0)
+  // ── QR EXPORT (chunked) ───────────────────────────────────────────
   const handleExportQR = async () => {
     if (!selected) {
       Alert.alert('Select a repo', 'Tap a repository from the list first.')
@@ -77,16 +88,19 @@ export default function TransferScreen() {
       await addFolder(repoDir, '')
       setStatus('Generating zip file…')
       const base64Zip = await zip.generateAsync({ type: 'base64' })
-      const byteLength = base64Zip.length * 0.75 // base64 to bytes
-      if (byteLength > 3000) {
-        Alert.alert('Repo too large for QR', 'Please select a smaller repository. QR codes can only encode very small files (a few KB).')
-        setStatus('')
-        setBusy(false)
-        return
+
+      // Split into chunks with header  "idx/total:payload"
+      const totalChunks = Math.ceil(base64Zip.length / QR_CHUNK_SIZE)
+      const chunks: string[] = []
+      for (let i = 0; i < totalChunks; i++) {
+        const payload = base64Zip.slice(i * QR_CHUNK_SIZE, (i + 1) * QR_CHUNK_SIZE)
+        chunks.push(`${i}/${totalChunks}:${payload}`)
       }
-      setQrData(base64Zip)
+
+      setQrChunks(chunks)
+      setQrPage(0)
       setQrVisible(true)
-      setStatus('')
+      setStatus(`Split into ${totalChunks} QR code(s) (${formatBytes(base64Zip.length * 0.75)})`)
     } catch (e: any) {
       Alert.alert('QR Export Error', e.message)
       setStatus('')
@@ -100,27 +114,73 @@ export default function TransferScreen() {
     if (!cameraPermission || cameraPermission.status !== 'granted') {
       const { status } = await requestCameraPermission()
       if (status !== 'granted') {
-        Alert.alert('Camera permission required', 'Please allow camera access to scan QR codes.')
+        Alert.alert(
+          'Camera permission required',
+          'Please allow camera access to scan QR codes.',
+        )
         return
       }
     }
     setScanned(false)
+    setImportChunks({})
+    setImportTotal(0)
     setScannerVisible(true)
   }
 
   const handleQrScanned = async (result: BarcodeScanningResult) => {
     if (scanned) return
-    setScanned(true)
-    setScannerVisible(false)
+    const raw = result.data
+
+    // Parse chunk header  "idx/total:payload"
+    const headerEnd = raw.indexOf(':')
+    if (headerEnd === -1) {
+      // Legacy single-QR fallback
+      setScanned(true)
+      setScannerVisible(false)
+      await importBase64Zip(raw)
+      return
+    }
+
+    const header = raw.slice(0, headerEnd)
+    const payload = raw.slice(headerEnd + 1)
+    const [idxStr, totalStr] = header.split('/')
+    const idx = parseInt(idxStr, 10)
+    const total = parseInt(totalStr, 10)
+    if (isNaN(idx) || isNaN(total)) {
+      // Not a chunked QR – treat as legacy
+      setScanned(true)
+      setScannerVisible(false)
+      await importBase64Zip(raw)
+      return
+    }
+
+    setImportTotal(total)
+    setImportChunks((prev) => {
+      const updated = { ...prev, [idx]: payload }
+      const collectedCount = Object.keys(updated).length
+      setStatus(`Scanned chunk ${collectedCount} / ${total}`)
+
+      if (collectedCount === total) {
+        // All chunks collected – reassemble & import
+        setScanned(true)
+        setScannerVisible(false)
+        const fullBase64 = Array.from({ length: total }, (_, i) => updated[i]).join('')
+        importBase64Zip(fullBase64)
+      }
+      return updated
+    })
+  }
+
+  /** Shared import logic used by both single and chunked QR flows */
+  const importBase64Zip = async (base64Zip: string) => {
     setBusy(true)
     setStatus('Importing from QR…')
     try {
-      const scannedData = result.data
-      const zip = await JSZip.loadAsync(scannedData, { base64: true })
+      const zip = await JSZip.loadAsync(base64Zip, { base64: true })
       const entries = Object.keys(zip.files)
       const repoName = 'qr-import-' + Date.now()
       const hasGitDir = entries.some(
-        (e) => e === '.git/' || e.startsWith('.git/')
+        (e) => e === '.git/' || e.startsWith('.git/'),
       )
       const targetDir = getRepoPath(repoName)
       await FileSystem.makeDirectoryAsync(targetDir, { intermediates: true })
@@ -148,7 +208,10 @@ export default function TransferScreen() {
         }
       }
       setStatus(`Imported "${repoName}" (${count} files) ✓`)
-      Alert.alert('Success', `Repository "${repoName}" imported with ${count} files.`)
+      Alert.alert(
+        'Success',
+        `Repository "${repoName}" imported with ${count} files.`,
+      )
       refresh()
     } catch (e: any) {
       Alert.alert('QR Import Error', e.message)
@@ -464,7 +527,9 @@ export default function TransferScreen() {
 
         <TouchableOpacity
           className={`py-3 rounded-lg items-center border ${
-            selected && !busy ? 'bg-[#21262d] border-[#30363d]' : 'bg-[#161b22] border-[#30363d]'
+            selected && !busy
+              ? 'bg-[#21262d] border-[#30363d]'
+              : 'bg-[#161b22] border-[#30363d]'
           }`}
           onPress={handleExportQR}
           disabled={busy || !selected}
@@ -506,64 +571,224 @@ export default function TransferScreen() {
           </Text>
         </TouchableOpacity>
       </View>
-      {/* QR Modal */}
+      {/* QR Modal (chunked pagination) */}
       <Modal
         visible={qrVisible}
         animationType="slide"
         transparent={true}
         onRequestClose={() => setQrVisible(false)}
       >
-        <View style={{ flex: 1, backgroundColor: '#000a', justifyContent: 'center', alignItems: 'center' }}>
-          <View style={{ backgroundColor: '#161b22', padding: 24, borderRadius: 16, alignItems: 'center', maxWidth: 340 }}>
-            <Text style={{ color: '#e6edf3', fontWeight: 'bold', fontSize: 18, marginBottom: 12 }}>Scan to Import Repo</Text>
-            {qrData && (
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: '#000a',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: '#161b22',
+              padding: 24,
+              borderRadius: 16,
+              alignItems: 'center',
+              maxWidth: 340,
+            }}
+          >
+            <Text
+              style={{
+                color: '#e6edf3',
+                fontWeight: 'bold',
+                fontSize: 18,
+                marginBottom: 4,
+              }}
+            >
+              Scan to Import Repo
+            </Text>
+            <Text
+              style={{
+                color: '#58a6ff',
+                fontSize: 14,
+                fontWeight: '600',
+                marginBottom: 12,
+              }}
+            >
+              QR {qrPage + 1} / {qrChunks.length}
+            </Text>
+            {qrChunks.length > 0 && (
               <QRCode
-                value={qrData}
+                value={qrChunks[qrPage]}
                 size={220}
                 backgroundColor="#161b22"
                 color="#58a6ff"
               />
             )}
-            <Text style={{ color: '#8b949e', fontSize: 12, marginTop: 12, textAlign: 'center' }}>
-              Only very small repos can be shared via QR. Scan this code on another device to import.
+            {/* Prev / Next navigation */}
+            {qrChunks.length > 1 && (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  marginTop: 14,
+                  gap: 12,
+                  alignItems: 'center',
+                }}
+              >
+                <TouchableOpacity
+                  style={{
+                    paddingVertical: 6,
+                    paddingHorizontal: 18,
+                    backgroundColor: qrPage > 0 ? '#30363d' : '#21262d',
+                    borderRadius: 8,
+                  }}
+                  disabled={qrPage === 0}
+                  onPress={() => setQrPage((p) => p - 1)}
+                >
+                  <Text
+                    style={{
+                      color: qrPage > 0 ? '#e6edf3' : '#484f58',
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    ◀ Prev
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{
+                    paddingVertical: 6,
+                    paddingHorizontal: 18,
+                    backgroundColor:
+                      qrPage < qrChunks.length - 1 ? '#30363d' : '#21262d',
+                    borderRadius: 8,
+                  }}
+                  disabled={qrPage >= qrChunks.length - 1}
+                  onPress={() => setQrPage((p) => p + 1)}
+                >
+                  <Text
+                    style={{
+                      color:
+                        qrPage < qrChunks.length - 1 ? '#e6edf3' : '#484f58',
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    Next ▶
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            <Text
+              style={{
+                color: '#8b949e',
+                fontSize: 12,
+                marginTop: 12,
+                textAlign: 'center',
+              }}
+            >
+              {qrChunks.length === 1
+                ? 'Scan this code on another device to import.'
+                : `Show each QR code in order. The receiver must scan all ${qrChunks.length} codes.`}
             </Text>
             <TouchableOpacity
-              style={{ marginTop: 18, paddingVertical: 8, paddingHorizontal: 24, backgroundColor: '#30363d', borderRadius: 8 }}
+              style={{
+                marginTop: 18,
+                paddingVertical: 8,
+                paddingHorizontal: 24,
+                backgroundColor: '#30363d',
+                borderRadius: 8,
+              }}
               onPress={() => setQrVisible(false)}
             >
-              <Text style={{ color: '#e6edf3', fontWeight: 'bold' }}>Close</Text>
+              <Text style={{ color: '#e6edf3', fontWeight: 'bold' }}>
+                Close
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* QR Scanner Modal */}
+      {/* QR Scanner Modal (multi-chunk) */}
       <Modal
         visible={scannerVisible}
         animationType="slide"
         transparent={true}
         onRequestClose={() => setScannerVisible(false)}
       >
-        <View style={{ flex: 1, backgroundColor: '#000a', justifyContent: 'center', alignItems: 'center' }}>
-          <View style={{ backgroundColor: '#161b22', padding: 16, borderRadius: 16, alignItems: 'center', maxWidth: 340 }}>
-            <Text style={{ color: '#e6edf3', fontWeight: 'bold', fontSize: 18, marginBottom: 12 }}>Scan QR Code</Text>
-            {(!cameraPermission || cameraPermission.status !== 'granted') ? (
-              <Text style={{ color: '#f66', marginBottom: 12 }}>Camera permission denied.</Text>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: '#000a',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: '#161b22',
+              padding: 16,
+              borderRadius: 16,
+              alignItems: 'center',
+              maxWidth: 340,
+            }}
+          >
+            <Text
+              style={{
+                color: '#e6edf3',
+                fontWeight: 'bold',
+                fontSize: 18,
+                marginBottom: 4,
+              }}
+            >
+              Scan QR Code{importTotal > 1 ? 's' : ''}
+            </Text>
+            {importTotal > 0 && (
+              <Text
+                style={{
+                  color: '#58a6ff',
+                  fontSize: 13,
+                  marginBottom: 8,
+                }}
+              >
+                Collected {Object.keys(importChunks).length} / {importTotal} chunks
+              </Text>
+            )}
+            {!cameraPermission || cameraPermission.status !== 'granted' ? (
+              <Text style={{ color: '#f66', marginBottom: 12 }}>
+                Camera permission denied.
+              </Text>
             ) : (
               <CameraView
                 ref={cameraRef}
-                style={{ width: 240, height: 240, marginBottom: 12 }}
+                style={{ width: 260, height: 260, marginBottom: 12, borderRadius: 8 }}
                 facing="back"
                 barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
                 onBarcodeScanned={handleQrScanned}
                 enableTorch={false}
               />
             )}
+            <Text
+              style={{
+                color: '#8b949e',
+                fontSize: 11,
+                textAlign: 'center',
+                marginBottom: 8,
+              }}
+            >
+              Point camera at each QR code in sequence.
+              {importTotal > 1
+                ? ' The sender should tap Next after each scan.'
+                : ''}
+            </Text>
             <TouchableOpacity
-              style={{ marginTop: 8, paddingVertical: 8, paddingHorizontal: 24, backgroundColor: '#30363d', borderRadius: 8 }}
+              style={{
+                paddingVertical: 8,
+                paddingHorizontal: 24,
+                backgroundColor: '#30363d',
+                borderRadius: 8,
+              }}
               onPress={() => setScannerVisible(false)}
             >
-              <Text style={{ color: '#e6edf3', fontWeight: 'bold' }}>Close</Text>
+              <Text style={{ color: '#e6edf3', fontWeight: 'bold' }}>
+                Close
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
