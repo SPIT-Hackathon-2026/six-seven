@@ -429,7 +429,7 @@ export default function SearchScreen() {
                   borderColor: '#1a1a1a',
                 }}
               >
-                <Text style={{ fontSize: 36, marginBottom: 12 }}>🔍</Text>
+                <Search size={36} color="#484f58" style={{ marginBottom: 12 }} />
                 <Text style={{ color: '#8b949e', fontSize: 15, fontWeight: '700', marginBottom: 4 }}>
                   No commits found
                 </Text>
@@ -682,7 +682,6 @@ export default function SearchScreen() {
                     borderColor: '#1a1a1a',
                   }}
                 >
-                  <Text style={{ fontSize: 13 }}>{s.icon}</Text>
                   <Text style={{ color: '#8b949e', fontSize: 12, fontWeight: '500' }}>{s.text}</Text>
                 </TouchableOpacity>
               ))}
@@ -713,10 +712,10 @@ export default function SearchScreen() {
               </Text>
               <View style={{ gap: 6 }}>
                 {[
-                  '💡 "bug fixes by John last week"',
-                  '💡 "who modified App.tsx"',
-                  '💡 "new features this month"',
-                  '💡 "refactoring in services/"',
+                  '"bug fixes by John last week"',
+                  '"who modified App.tsx"',
+                  '"new features this month"',
+                  '"refactoring in services/"',
                 ].map((tip, i) => (
                   <View
                     key={i}

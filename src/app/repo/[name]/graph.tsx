@@ -10,6 +10,7 @@ import {
   Animated,
   Clipboard,
   Dimensions,
+  SafeAreaView,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import {
@@ -637,14 +638,14 @@ export default function BranchGraphScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#000000' }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#000000' }}>
 
       {/* ── Header ── */}
       <View
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          paddingTop: 56,
+          paddingTop: 16,
           paddingBottom: 14,
           paddingHorizontal: 16,
           backgroundColor: '#000000',
@@ -875,6 +876,6 @@ export default function BranchGraphScreen() {
           </View>
         )}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   )
 }

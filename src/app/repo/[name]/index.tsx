@@ -965,62 +965,67 @@ export default function RepoDetailScreen() {
         </View>
       </View>
 
-      {/* ── Branch selector row ── */}
-      <View className="flex-row items-center px-4 py-3 bg-white dark:bg-zinc-900 border-b border-neutral-200 dark:border-zinc-800">
-        <TouchableOpacity
-          className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800 "
-          onPress={() => setShowBranchPicker(!showBranchPicker)}
-        >
-          <GitBranch size={14} color="#58a6ff" className="mr-1.5" />
-          <Text className="text-black dark:text-neutral-100 text-sm font-semibold mr-1.5">
-            {branch}
-          </Text>
-          <ChevronDown size={14} color="#8b949e" />
-        </TouchableOpacity>
-        <View className="flex-row ml-4 gap-3 flex-1">
-          <Text className="text-neutral-500 text-xs font-medium">
-            {branches.length} branch{branches.length !== 1 ? 'es' : ''}
-          </Text>
-          <Text className="text-neutral-500 text-xs font-medium">
-            {tags.length} tag{tags.length !== 1 ? 's' : ''}
-          </Text>
+      {/* ── Branch selector & Actions ── */}
+      <View className="px-4 py-3 bg-white dark:bg-zinc-900 border-b border-neutral-200 dark:border-zinc-800">
+        <View className="flex-row items-center mb-3">
+          <TouchableOpacity
+            className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800 "
+            onPress={() => setShowBranchPicker(!showBranchPicker)}
+          >
+            <GitBranch size={14} color="#58a6ff" className="mr-1.5" />
+            <Text className="text-black dark:text-neutral-100 text-sm font-semibold mr-1.5">
+              {branch}
+            </Text>
+            <ChevronDown size={14} color="#8b949e" />
+          </TouchableOpacity>
+          <View className="flex-row ml-4 gap-3 flex-1">
+            <Text className="text-neutral-500 text-xs font-medium">
+              {branches.length} branch{branches.length !== 1 ? 'es' : ''}
+            </Text>
+            <Text className="text-neutral-500 text-xs font-medium">
+              {tags.length} tag{tags.length !== 1 ? 's' : ''}
+            </Text>
+          </View>
         </View>
-        <TouchableOpacity
-          className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800 "
-          onPress={() =>
-            router.push({
-              pathname: '/repo/[name]/graph' as any,
-              params: { name },
-            })
-          }
-        >
-          <Share2 size={14} color="#d2a8ff" className="mr-1.5" />
-          <Text className="text-[#d2a8ff] text-xs font-semibold">Graph</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800"
-          onPress={() =>
-            router.push({
-              pathname: '/repo/[name]/analytics' as any,
-              params: { name },
-            })
-          }
-        >
-          <BarChart3 size={14} color="#58a6ff" className="mr-1.5" />
-          <Text className="text-[#58a6ff] text-xs font-semibold">Analytics</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800"
-          onPress={() =>
-            router.push({
-              pathname: '/repo/[name]/health' as any,
-              params: { name },
-            })
-          }
-        >
-          <ShieldCheck size={14} color="#3fb950" className="mr-1.5" />
-          <Text className="text-[#3fb950] text-xs font-semibold">Health</Text>
-        </TouchableOpacity>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 4 }}>
+          <TouchableOpacity
+            className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800 "
+            onPress={() =>
+              router.push({
+                pathname: '/repo/[name]/graph' as any,
+                params: { name },
+              })
+            }
+          >
+            <Share2 size={14} color="#d2a8ff" className="mr-1.5" />
+            <Text className="text-[#d2a8ff] text-xs font-semibold">Graph</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800"
+            onPress={() =>
+              router.push({
+                pathname: '/repo/[name]/analytics' as any,
+                params: { name },
+              })
+            }
+          >
+            <BarChart3 size={14} color="#58a6ff" className="mr-1.5" />
+            <Text className="text-[#58a6ff] text-xs font-semibold">Analytics</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800"
+            onPress={() =>
+              router.push({
+                pathname: '/repo/[name]/health' as any,
+                params: { name },
+              })
+            }
+          >
+            <ShieldCheck size={14} color="#3fb950" className="mr-1.5" />
+            <Text className="text-[#3fb950] text-xs font-semibold">Health</Text>
+          </TouchableOpacity>
+        </ScrollView>
       </View>
 
       {/* Branch picker dropdown */}
