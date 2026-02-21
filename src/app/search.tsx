@@ -103,12 +103,6 @@ export default function SearchScreen() {
     }, []),
   )
 
-  // Parsed filter preview
-  const parsedFilters = useMemo((): ParsedFilters | null => {
-    if (query.length < 3) return null
-    return parseQuery(query) as ParsedFilters
-  }, [query])
-
   const suggestions = useMemo(() => getSuggestions(query), [query])
 
   const handleSearch = useCallback(
@@ -136,15 +130,6 @@ export default function SearchScreen() {
           const next = [searchQuery, ...prev.filter((x) => x !== searchQuery)]
           return next.slice(0, 8)
         })
-
-        // Async AI summary (non-blocking)
-        if (resultItems.length > 0 && isAIAvailable()) {
-          setLoadingSummary(true)
-          aiSummarizeResults(searchQuery, resultItems)
-            .then((summary) => setAiSummary(summary))
-            .catch(() => {})
-            .finally(() => setLoadingSummary(false))
-        }
       } catch (err) {
         console.warn('Search error:', err)
         setResults([])
@@ -261,76 +246,29 @@ export default function SearchScreen() {
         contentContainerStyle={{ paddingBottom: 140 }}
         keyboardShouldPersistTaps="handled"
       >
-        {/* ── Parsed filter preview ── */}
-        {parsedFilters && query.length >= 3 && !hasSearched && (
-          <View className="mx-5 mt-4 p-4 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800">
-            <Text className="text-neutral-500 text-[10px] font-bold uppercase tracking-wider mb-2.5">
-              Detected Filters
-            </Text>
-            <View className="flex-row flex-wrap gap-2">
-              {parsedFilters.authors.length > 0 &&
-                parsedFilters.authors.map((a: string) => (
-                  <View
-                    key={a}
-                    className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/40"
-                  >
-                    <User size={11} color="#a855f7" />
-                    <Text className="text-purple-700 dark:text-purple-300 text-[11px] font-semibold">
-                      {a}
-                    </Text>
-                  </View>
-                ))}
-              {parsedFilters.files.length > 0 &&
-                parsedFilters.files.map((f: string) => (
-                  <View
-                    key={f}
-                    className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40"
-                  >
-                    <FileCode size={11} color="#3b82f6" />
-                    <Text className="text-blue-700 dark:text-blue-300 text-[11px] font-semibold">
-                      {f}
-                    </Text>
-                  </View>
-                ))}
-              {parsedFilters.dateRange && (
-                <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/40">
-                  <CalendarDays size={11} color="#22c55e" />
-                  <Text className="text-green-700 dark:text-green-300 text-[11px] font-semibold">
-                    {parsedFilters.dateRange.since
-                      ? `since ${formatDate(parsedFilters.dateRange.since)}`
-                      : 'custom range'}
-                  </Text>
-                </View>
-              )}
-              {parsedFilters.type && (
-                <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40">
-                  <Tag size={11} color="#f59e0b" />
-                  <Text className="text-amber-700 dark:text-amber-300 text-[11px] font-semibold">
-                    {parsedFilters.type}
-                  </Text>
-                </View>
-              )}
-              {parsedFilters.keywords.length > 0 &&
-                parsedFilters.keywords.map((kw: string) => (
-                  <View
-                    key={kw}
-                    className="px-2.5 py-1.5 rounded-lg bg-neutral-100 dark:bg-zinc-800 border border-neutral-200 dark:border-zinc-700"
-                  >
-                    <Text className="text-neutral-600 dark:text-neutral-300 text-[11px] font-semibold">
-                      "{kw}"
-                    </Text>
-                  </View>
-                ))}
+        {/* ── AI Search indicator ── */}
+        {query.length >= 3 && !hasSearched && !searching && aiEnabled && (
+          <View className="mx-5 mt-4 p-4 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/40">
+            <View className="flex-row items-center gap-2 mb-2">
+              <Sparkles size={14} color="#a855f7" />
+              <Text className="text-purple-700 dark:text-purple-300 text-sm font-bold">
+                AI-powered search ready
+              </Text>
             </View>
+            <Text className="text-purple-600 dark:text-purple-400 text-xs">
+              Press search or tap enter — the LLM will analyze your full commit history and find the most relevant results.
+            </Text>
             <TouchableOpacity
               className="mt-3 py-2.5 rounded-lg bg-[#1f6feb] items-center flex-row justify-center gap-2"
               onPress={() => handleSearch()}
             >
               <Search size={14} color="#fff" />
-              <Text className="text-white text-sm font-bold">Search</Text>
+              <Text className="text-white text-sm font-bold">Search with AI</Text>
             </TouchableOpacity>
           </View>
         )}
+
+
 
         {/* ── Searching state ── */}
         {searching && (

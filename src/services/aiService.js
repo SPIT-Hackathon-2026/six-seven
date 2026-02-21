@@ -128,6 +128,13 @@ Write a brief, helpful 2-3 sentence summary of these results. Mention key patter
 }
 
 /**
+ * Direct LLM call for search — exported for nlSearchService to use.
+ */
+export async function callSearchLLM(prompt, options = {}) {
+  return callLLM(prompt, options)
+}
+
+/**
  * Check if AI features are available (API key is set).
  */
 export function isAIAvailable() {
