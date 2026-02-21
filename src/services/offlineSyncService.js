@@ -22,11 +22,12 @@ import {
   currentBranch,
   getLog,
 } from './gitService'
-import { isGitHubLinked } from './githubAuth'
+import { isGitHubLinked, addCollaborator, removeCollaborator } from './githubAuth'
 
 // ── Persistence ────────────────────────────────────────────────────
 
 const QUEUE_FILE = `${FileSystem.documentDirectory}offline_sync_queue.json`
+const COLLAB_QUEUE_FILE = `${FileSystem.documentDirectory}collab_queue.json`
 const SYNC_META_FILE = `${FileSystem.documentDirectory}sync_meta.json`
 
 async function _readQueue() {
@@ -422,4 +423,108 @@ export async function syncAll(repoNames) {
     }
   }
   return results
+}
+
+// ── Collaborator Queue (Offline-First) ──────────────────────────────
+
+async function _readCollabQueue() {
+  try {
+    const raw = await FileSystem.readAsStringAsync(COLLAB_QUEUE_FILE)
+    return JSON.parse(raw)
+  } catch { return [] }
+}
+
+async function _writeCollabQueue(queue) {
+  await FileSystem.writeAsStringAsync(COLLAB_QUEUE_FILE, JSON.stringify(queue))
+}
+
+/**
+ * Queue a collaborator add or remove action.
+ * @param {'add'|'remove'} action
+ * @param {string} owner - repo owner
+ * @param {string} repo - repo name
+ * @param {string} username - GitHub username
+ * @param {string} [permission] - 'push'|'pull'|'admin' (for add only)
+ */
+export async function enqueueCollaboratorAction(action, owner, repo, username, permission = 'push') {
+  const queue = await _readCollabQueue()
+
+  // Deduplicate — remove opposite pending action for same user+repo
+  const idx = queue.findIndex(
+    (q) => q.owner === owner && q.repo === repo && q.username === username && q.status === 'pending'
+  )
+  if (idx !== -1) {
+    // If we're adding and there's a pending remove (or vice versa), they cancel out
+    if (queue[idx].action !== action) {
+      queue.splice(idx, 1)
+      await _writeCollabQueue(queue)
+      _emit('collab-queue-change', queue)
+      return
+    }
+    // Same action already pending — skip
+    return
+  }
+
+  queue.push({
+    id: `collab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    action,
+    owner,
+    repo,
+    username,
+    permission,
+    status: 'pending',
+    error: null,
+    createdAt: new Date().toISOString(),
+  })
+
+  await _writeCollabQueue(queue)
+  _emit('collab-queue-change', queue)
+
+  // Auto-process if online
+  if (isOnline()) {
+    drainCollaboratorQueue().catch(() => {})
+  }
+}
+
+/** Get collaborator queue for a specific repo (or all). */
+export async function getCollaboratorQueue(owner = null, repo = null) {
+  const queue = await _readCollabQueue()
+  if (!owner || !repo) return queue
+  return queue.filter((q) => q.owner === owner && q.repo === repo)
+}
+
+/** Drain the collaborator queue — process all pending actions. */
+export async function drainCollaboratorQueue() {
+  if (!isOnline()) return
+  const linked = await isGitHubLinked()
+  if (!linked) return
+
+  const queue = await _readCollabQueue()
+  const pending = queue.filter((q) => q.status === 'pending')
+
+  for (const item of pending) {
+    try {
+      if (item.action === 'add') {
+        await addCollaborator(item.owner, item.repo, item.username, item.permission)
+      } else if (item.action === 'remove') {
+        await removeCollaborator(item.owner, item.repo, item.username)
+      }
+      item.status = 'done'
+      item.error = null
+    } catch (err) {
+      item.status = 'error'
+      item.error = err.message
+    }
+  }
+
+  await _writeCollabQueue(queue)
+  _emit('collab-queue-change', queue)
+}
+
+/** Clear completed collab queue entries. */
+export async function clearCollabCompleted() {
+  const queue = await _readCollabQueue()
+  const cleaned = queue.filter((q) => q.status === 'pending')
+  await _writeCollabQueue(cleaned)
+  _emit('collab-queue-change', cleaned)
 }

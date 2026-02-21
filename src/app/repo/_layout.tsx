@@ -19,6 +19,9 @@ export default function RepoLayout() {
         options={{ title: 'Compare Branches' }}
       />
       <Stack.Screen name="[name]/graph" options={{ title: 'Branch Graph' }} />
+      <Stack.Screen name="[name]/analytics" options={{ title: 'Analytics' }} />
+      <Stack.Screen name="[name]/health" options={{ title: 'Health' }} />
+      <Stack.Screen name="[name]/user-profile" options={{ title: 'User Profile' }} />
     </Stack>
   )
 }

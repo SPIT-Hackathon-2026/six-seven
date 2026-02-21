@@ -29,6 +29,27 @@ export async function addCollaborator(
   const body = await resp.text()
   throw new Error(`GitHub API ${resp.status}: ${body.slice(0, 300)}`)
 }
+
+/**
+ * Remove a collaborator from a repo (GitHub API).
+ */
+export async function removeCollaborator(owner, repo, username) {
+  const auth = await _load()
+  if (!auth?.token) throw new Error('GitHub PAT not configured')
+  const resp = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/collaborators/${username}`,
+    {
+      method: 'DELETE',
+      headers: {
+        Authorization: `token ${auth.token}`,
+        Accept: 'application/vnd.github+json',
+      },
+    },
+  )
+  if (resp.status === 204 || resp.status === 200) return true
+  const body = await resp.text()
+  throw new Error(`GitHub API ${resp.status}: ${body.slice(0, 300)}`)
+}
 /**
  * GitHub PAT storage & HTTP helper for isomorphic-git.
  *

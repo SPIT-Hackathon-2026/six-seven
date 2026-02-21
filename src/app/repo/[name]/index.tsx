@@ -40,6 +40,8 @@ import {
   ArrowDownToLine,
   Link2,
   Github,
+  BarChart3,
+  ShieldCheck,
 } from 'lucide-react-native';
 import {
   currentBranch,
@@ -971,6 +973,30 @@ export default function RepoDetailScreen() {
         >
           <Share2 size={14} color="#d2a8ff" className="mr-1.5" />
           <Text className="text-[#d2a8ff] text-xs font-semibold">Graph</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800"
+          onPress={() =>
+            router.push({
+              pathname: '/repo/[name]/analytics' as any,
+              params: { name },
+            })
+          }
+        >
+          <BarChart3 size={14} color="#58a6ff" className="mr-1.5" />
+          <Text className="text-[#58a6ff] text-xs font-semibold">Analytics</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800"
+          onPress={() =>
+            router.push({
+              pathname: '/repo/[name]/health' as any,
+              params: { name },
+            })
+          }
+        >
+          <ShieldCheck size={14} color="#3fb950" className="mr-1.5" />
+          <Text className="text-[#3fb950] text-xs font-semibold">Health</Text>
         </TouchableOpacity>
       </View>
 
