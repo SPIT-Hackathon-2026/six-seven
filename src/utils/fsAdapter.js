@@ -1,4 +1,11 @@
 import * as FileSystem from 'expo-file-system/legacy'
+import { Buffer } from 'buffer'
+
+// Polyfill Buffer globally — isomorphic-git (and many Node-oriented libs)
+// rely on global.Buffer which doesn't exist in Hermes.
+if (typeof globalThis.Buffer === 'undefined') {
+  globalThis.Buffer = Buffer
+}
 
 /**
  * Filesystem adapter that bridges expo-file-system to the interface
@@ -45,11 +52,49 @@ function encodeData(data) {
 }
 
 /**
- * Ensure the URI has the file:// scheme that expo-file-system expects.
+ * Ensure the path is a proper file:// URI that expo-file-system expects.
+ * isomorphic-git's internal normalize() collapses file:/// to file:/
+ * so we must repair the URI before passing it to FileSystem.
  */
 function toUri(filepath) {
-  if (filepath.startsWith('file://')) return filepath
+  if (typeof filepath !== 'string') return filepath
+  // Repair mangled file: URIs (e.g. file:/data/... → file:///data/...)
+  if (filepath.startsWith('file:')) {
+    const pathPart = filepath.replace(/^file:\/+/, '/')
+    return 'file://' + pathPart
+  }
+  // Plain absolute path → add scheme
+  if (filepath.startsWith('/')) {
+    return 'file://' + filepath
+  }
   return filepath
+}
+
+/**
+ * Create an error that mimics Node's fs errors with a `.code` property.
+ * isomorphic-git relies on `err.code === 'ENOENT'` to detect missing files.
+ */
+function enoent(syscall, filepath) {
+  const err = new Error(
+    `ENOENT: no such file or directory, ${syscall} '${filepath}'`,
+  )
+  err.code = 'ENOENT'
+  err.errno = -2
+  err.syscall = syscall
+  err.path = filepath
+  return err
+}
+
+/**
+ * Safely call FileSystem.getInfoAsync – some expo versions throw
+ * instead of returning { exists: false } for certain URI patterns.
+ */
+async function safeGetInfo(uri, opts) {
+  try {
+    return await FileSystem.getInfoAsync(uri, opts)
+  } catch {
+    return { exists: false, isDirectory: false }
+  }
 }
 
 // ── public fs object ─────────────────────────────────────────────────
@@ -63,22 +108,28 @@ export const fs = {
       const encoding =
         typeof options === 'string' ? options : (options?.encoding ?? null)
 
-      if (encoding === 'utf8' || encoding === 'utf-8') {
-        return FileSystem.readAsStringAsync(toUri(filepath), {
-          encoding: FileSystem.EncodingType.UTF8,
-        })
-      }
+      try {
+        if (encoding === 'utf8' || encoding === 'utf-8') {
+          return await FileSystem.readAsStringAsync(toUri(filepath), {
+            encoding: FileSystem.EncodingType.UTF8,
+          })
+        }
 
-      // Binary read → return Uint8Array
-      const base64 = await FileSystem.readAsStringAsync(toUri(filepath), {
-        encoding: FileSystem.EncodingType.Base64,
-      })
-      const binaryStr = atob(base64)
-      const bytes = new Uint8Array(binaryStr.length)
-      for (let i = 0; i < binaryStr.length; i++) {
-        bytes[i] = binaryStr.charCodeAt(i)
+        // Binary read → return Uint8Array
+        const base64 = await FileSystem.readAsStringAsync(toUri(filepath), {
+          encoding: FileSystem.EncodingType.Base64,
+        })
+        const binaryStr = atob(base64)
+        const bytes = new Uint8Array(binaryStr.length)
+        for (let i = 0; i < binaryStr.length; i++) {
+          bytes[i] = binaryStr.charCodeAt(i)
+        }
+        return bytes
+      } catch (err) {
+        if (err.code === 'ENOENT') throw err
+        // Treat any read failure on a missing file as ENOENT
+        throw enoent('open', filepath)
       }
-      return bytes
     },
 
     /**
@@ -102,6 +153,12 @@ export const fs = {
               ? FileSystem.EncodingType.Base64
               : enc
       }
+      // Ensure parent directory exists before writing
+      const parentUri = toUri(filepath).replace(/\/[^/]+$/, '')
+      const parentInfo = await safeGetInfo(parentUri)
+      if (!parentInfo.exists) {
+        await FileSystem.makeDirectoryAsync(parentUri, { intermediates: true })
+      }
       await FileSystem.writeAsStringAsync(toUri(filepath), content, {
         encoding: enc,
       })
@@ -111,7 +168,7 @@ export const fs = {
      * unlink – delete a single file.
      */
     unlink: async (filepath) => {
-      const info = await FileSystem.getInfoAsync(toUri(filepath))
+      const info = await safeGetInfo(toUri(filepath))
       if (info.exists) {
         await FileSystem.deleteAsync(toUri(filepath), { idempotent: true })
       }
@@ -121,14 +178,19 @@ export const fs = {
      * readdir – return array of entry names.
      */
     readdir: async (dirPath) => {
-      return FileSystem.readDirectoryAsync(toUri(dirPath))
+      try {
+        return await FileSystem.readDirectoryAsync(toUri(dirPath))
+      } catch (err) {
+        if (err.code === 'ENOENT') throw err
+        throw enoent('scandir', dirPath)
+      }
     },
 
     /**
      * mkdir – supports { recursive: true }.
      */
     mkdir: async (dirPath, _options) => {
-      const info = await FileSystem.getInfoAsync(toUri(dirPath))
+      const info = await safeGetInfo(toUri(dirPath))
       if (!info.exists) {
         await FileSystem.makeDirectoryAsync(toUri(dirPath), {
           intermediates: true,
@@ -140,7 +202,7 @@ export const fs = {
      * rmdir – recursively remove a directory.
      */
     rmdir: async (dirPath) => {
-      const info = await FileSystem.getInfoAsync(toUri(dirPath))
+      const info = await safeGetInfo(toUri(dirPath))
       if (info.exists) {
         await FileSystem.deleteAsync(toUri(dirPath), { idempotent: true })
       }
@@ -150,11 +212,9 @@ export const fs = {
      * stat – returns object with .isFile(), .isDirectory(), .isSymbolicLink().
      */
     stat: async (filepath) => {
-      const info = await FileSystem.getInfoAsync(toUri(filepath), {
-        size: true,
-      })
+      const info = await safeGetInfo(toUri(filepath), { size: true })
       if (!info.exists) {
-        throw new Error(`ENOENT: no such file or directory, stat '${filepath}'`)
+        throw enoent('stat', filepath)
       }
       return wrapStat(info, filepath)
     },
@@ -163,13 +223,9 @@ export const fs = {
      * lstat – same as stat on mobile (no real symlinks).
      */
     lstat: async (filepath) => {
-      const info = await FileSystem.getInfoAsync(toUri(filepath), {
-        size: true,
-      })
+      const info = await safeGetInfo(toUri(filepath), { size: true })
       if (!info.exists) {
-        throw new Error(
-          `ENOENT: no such file or directory, lstat '${filepath}'`,
-        )
+        throw enoent('lstat', filepath)
       }
       return wrapStat(info, filepath)
     },
@@ -205,7 +261,7 @@ export const fs = {
      * exists – convenience (not in Node fs.promises but useful).
      */
     exists: async (filepath) => {
-      const info = await FileSystem.getInfoAsync(toUri(filepath))
+      const info = await safeGetInfo(toUri(filepath))
       return info.exists
     },
   },
