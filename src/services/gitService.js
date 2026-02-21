@@ -5,6 +5,29 @@ import * as FileSystem from 'expo-file-system/legacy'
 import { http, getOnAuth } from './githubAuth'
 
 // =====================================================================
+//  SPARSE / LAZY REPO DETECTION
+// =====================================================================
+
+/** Path to the sparse marker file inside a repo directory. */
+const SPARSE_MARKER = '.sparse'
+
+/**
+ * Returns true if the repo was cloned with noCheckout (lazy/sparse mode).
+ * We detect this by the presence of a hidden `.sparse` marker file written
+ * at clone time — there is no reliable git API for this in isomorphic-git.
+ */
+export async function isSparseRepo(repoName) {
+  const dir = getRepoPath(repoName)
+  const markerPath = `${dir}/${SPARSE_MARKER}`
+  try {
+    const info = await FileSystem.getInfoAsync(markerPath)
+    return info.exists
+  } catch {
+    return false
+  }
+}
+
+// =====================================================================
 //  CONFIG
 // =====================================================================
 
@@ -75,10 +98,17 @@ export async function unstageFile(repoName, filepath) {
   await git.remove({ fs, dir, filepath })
 }
 
-/** Stage all changed / new / deleted files by comparing working dir to HEAD. */
-export async function stageAll(repoName) {
+/** Stage all changed / new / deleted files by comparing working dir to HEAD.
+ * @param {string} repoName
+ * @param {object} [options]
+ * @param {boolean} [options.sparseMode=false] - When true (lazy/noCheckout clones),
+ *   files absent from the working directory are NOT treated as deleted.
+ *   Only files that physically exist on disk are staged.
+ */
+export async function stageAll(repoName, options = {}) {
   const dir = getRepoPath(repoName)
   const statusMatrix = await git.statusMatrix({ fs, dir })
+  const sparseMode = options.sparseMode ?? false
 
   for (const [
     filepath,
@@ -87,7 +117,12 @@ export async function stageAll(repoName) {
     stageStatus,
   ] of statusMatrix) {
     if (workdirStatus === 0) {
-      // File deleted in workdir → remove from index
+      if (sparseMode) {
+        // In sparse/lazy checkouts, a missing workdir file does NOT mean the
+        // user deleted it – they simply never downloaded it. Skip silently.
+        continue
+      }
+      // Normal mode: file deleted in workdir → remove from index
       await git.remove({ fs, dir, filepath })
     } else if (headStatus !== workdirStatus || stageStatus !== workdirStatus) {
       await git.add({ fs, dir, filepath })
@@ -159,9 +194,12 @@ export async function commit(repoName, message, options = {}) {
   return sha
 }
 
-/** Stage everything and commit in one step. */
+/** Stage everything and commit in one step.
+ * Automatically detects sparse/lazy repos and stages safely.
+ */
 export async function commitAll(repoName, message, options = {}) {
-  await stageAll(repoName)
+  const sparse = await isSparseRepo(repoName)
+  await stageAll(repoName, { sparseMode: sparse })
   return commit(repoName, message, options)
 }
 
@@ -1143,9 +1181,16 @@ export async function cloneFromGitHub(url, repoName, options = {}) {
     url,
     singleBranch: options.singleBranch ?? false,
     depth: options.depth ?? undefined,
+    noCheckout: options.noCheckout ?? false,
     onAuth,
     onProgress: options.onProgress,
   })
+  // Write a sparse marker file so we can detect lazy repos later
+  if (options.noCheckout) {
+    try {
+      await FileSystem.writeAsStringAsync(`${dir}/${SPARSE_MARKER}`, '1')
+    } catch { /* non-critical */ }
+  }
   return dir
 }
 

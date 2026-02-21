@@ -10,8 +10,8 @@ import {
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 
-import { readFile, writeFile } from '@/services/fileService'
-import { stageFile, getFileStatus, diffFile } from '@/services/gitService'
+import { readFile, writeFile, fileExists } from '@/services/fileService'
+import { stageFile, getFileStatus, diffFile, readFileAtRef, isSparseRepo } from '@/services/gitService'
 
 export default function EditorScreen() {
   const router = useRouter()
@@ -29,7 +29,22 @@ export default function EditorScreen() {
     ;(async () => {
       setLoading(true)
       try {
-        const text = await readFile(name, file)
+        let text: string
+        const exists = await fileExists(name, file)
+        if (exists) {
+          // Normal repo: file already on disk
+          text = await readFile(name, file)
+        } else {
+          // Sparse/lazy repo: read from git blob store, then materialize to disk
+          const sparse = await isSparseRepo(name)
+          if (sparse) {
+            text = await readFileAtRef(name, file, 'HEAD')
+            // Write to disk so stageFile + writeFile work normally after editing
+            await writeFile(name, file, text)
+          } else {
+            text = await readFile(name, file) // will throw with a clear error
+          }
+        }
         setContent(text)
         setOriginalContent(text)
         const stat = await getFileStatus(name, file).catch(() => null)

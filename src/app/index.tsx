@@ -11,7 +11,7 @@ import {
   Image,
 } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
-import { Upload, FlaskConical, Settings, Plus, Download, FolderGit2, Folder as FolderClosed, ChevronRight, Github, RefreshCw, Wifi, WifiOff, CloudUpload } from 'lucide-react-native'
+import { Upload, FlaskConical, Settings, Plus, Download, FolderGit2, Folder as FolderClosed, ChevronRight, Github, RefreshCw, Wifi, WifiOff, CloudUpload, Check } from 'lucide-react-native'
 
 import {
   currentBranch,
@@ -92,6 +92,7 @@ export default function HomeScreen() {
   const [showCloneDialog, setShowCloneDialog] = useState(false)
   const [cloneUrl, setCloneUrl] = useState('')
   const [cloneName, setCloneName] = useState('')
+  const [cloneLazy, setCloneLazy] = useState(false)
   const [cloning, setCloning] = useState(false)
   const [publishToGH, setPublishToGH] = useState(false)
   const [initPrivate, setInitPrivate] = useState(true)
@@ -273,10 +274,14 @@ export default function HomeScreen() {
     const repoName = cloneName.trim() || cloneUrl.trim().split('/').pop()?.replace('.git', '') || `clone-${Date.now()}`
     setCloning(true)
     try {
-      await cloneFromGitHub(cloneUrl.trim(), repoName)
+      await cloneFromGitHub(cloneUrl.trim(), repoName, {
+        noCheckout: cloneLazy,
+        depth: cloneLazy ? 1 : undefined
+      })
       setShowCloneDialog(false)
       setCloneUrl('')
       setCloneName('')
+      setCloneLazy(false)
       Alert.alert('Cloned!', `"${repoName}" is ready`)
       await refreshRepos()
     } catch (err: any) {
@@ -284,7 +289,7 @@ export default function HomeScreen() {
     } finally {
       setCloning(false)
     }
-  }, [cloneUrl, cloneName, refreshRepos])
+  }, [cloneUrl, cloneName, cloneLazy, refreshRepos])
 
   const handleOpenCloneDialog = useCallback(async () => {
     setShowCloneDialog(true)
@@ -596,6 +601,20 @@ export default function HomeScreen() {
             placeholderTextColor="#8b949e"
             autoCapitalize="none"
           />
+
+          {/* Lazy Clone Toggle */}
+          <TouchableOpacity
+            className="flex-row items-center mt-3 gap-2"
+            onPress={() => setCloneLazy(!cloneLazy)}
+          >
+            <View className={`w-4 h-4 rounded border items-center justify-center ${cloneLazy ? 'bg-[#58a6ff] border-[#58a6ff]' : 'border-neutral-300 dark:border-zinc-700'}`}>
+              {cloneLazy && <Check size={12} color="#fff" />}
+            </View>
+            <View>
+              <Text className="text-black dark:text-white text-sm font-medium">Lazy Clone (Save Space)</Text>
+              <Text className="text-neutral-500 text-[10px]">Only downloads actual files when you edit them.</Text>
+            </View>
+          </TouchableOpacity>
 
           {/* Quick pick from GitHub repos */}
           {ghLinked && ghRepos.length > 0 && (
