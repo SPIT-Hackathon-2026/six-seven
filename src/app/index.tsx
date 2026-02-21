@@ -8,6 +8,7 @@ import {
   TextInput,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { Upload, FlaskConical, Settings, Plus, Download, FolderGit2, Folder as FolderClosed, ChevronRight, Github, RefreshCw, Wifi, WifiOff, CloudUpload } from 'lucide-react-native'

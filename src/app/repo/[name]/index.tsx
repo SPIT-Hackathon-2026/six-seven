@@ -9,6 +9,7 @@ import {
   Alert,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from 'react-native';
 import {
   FileCode,
@@ -70,7 +71,7 @@ import { deleteRepo, getRepoSize } from '@/services/repoService';
 import { stash, stashPop } from '@/services/stashService';
 import { isOnline } from '@/services/networkService';
 import { enqueuePush, syncRepo } from '@/services/offlineSyncService';
-import { isGitHubLinked, createGitHubRepo } from '@/services/githubAuth';
+import { isGitHubLinked, createGitHubRepo, getCachedUsername, listCollaborators, addCollaborator } from '@/services/githubAuth';
 import SyntaxHighlighter from '@/components/SyntaxHighlighter';
 
 /* ───────────────── helpers ───────────────── */
@@ -242,6 +243,25 @@ export default function RepoDetailScreen() {
    const [collabStatus, setCollabStatus] = useState('');
    const [collabStatusColor, setCollabStatusColor] = useState('#2ea043');
    const [addingCollab, setAddingCollab] = useState(false);
+   const [collaborators, setCollaborators] = useState<any[]>([]);
+   const [loadingCollabs, setLoadingCollabs] = useState(false);
+   const [showAddCollabForm, setShowAddCollabForm] = useState(false);
+   const [removingCollab, setRemovingCollab] = useState<string | null>(null);
+   const fetchCollaborators = useCallback(async () => {
+     if (!name) return;
+     setLoadingCollabs(true);
+     try {
+       const owner = getCachedUsername();
+       if (!owner) return;
+       const list = await listCollaborators(owner, name);
+       setCollaborators(list);
+     } catch {
+       setCollaborators([]);
+     } finally {
+       setLoadingCollabs(false);
+     }
+   }, [name]);
+
    // Handler for adding collaborator
    const handleAddCollaborator = useCallback(async () => {
      if (!name || !collabUsername.trim()) {
@@ -253,21 +273,55 @@ export default function RepoDetailScreen() {
      setCollabStatus('');
      setCollabStatusColor('#2ea043');
      try {
-       // Get owner username from GitHub auth cache
-       const { getCachedUsername, addCollaborator } = await import('@/services/githubAuth');
        const owner = getCachedUsername();
        if (!owner) throw new Error('GitHub account not linked');
-       await addCollaborator(owner, name, collabUsername);
-       setCollabStatus('Collaborator added!');
+       await addCollaborator(owner, name, collabUsername.trim());
+       setCollabStatus('Invitation sent!');
        setCollabStatusColor('#2ea043');
        setCollabUsername('');
-     } catch (err) {
-       setCollabStatus('Failed to add collaborator');
+       setShowAddCollabForm(false);
+       // Refresh list
+       await fetchCollaborators();
+     } catch (err: any) {
+       setCollabStatus(err?.message?.slice(0, 80) ?? 'Failed to add collaborator');
        setCollabStatusColor('#f85149');
      } finally {
        setAddingCollab(false);
      }
-   }, [name, collabUsername]);
+   }, [name, collabUsername, fetchCollaborators]);
+
+   const handleRemoveCollaborator = useCallback(async (username: string) => {
+     Alert.alert('Remove Collaborator', `Remove @${username} from this repo?`, [
+       { text: 'Cancel', style: 'cancel' },
+       {
+         text: 'Remove',
+         style: 'destructive',
+         onPress: async () => {
+           setRemovingCollab(username);
+           try {
+             const owner = getCachedUsername();
+             if (!owner) throw new Error('Not linked');
+             const auth = await import('@/services/githubAuth').then(m => m.getGitHubAuth());
+             await fetch(
+               `https://api.github.com/repos/${owner}/${name}/collaborators/${username}`,
+               {
+                 method: 'DELETE',
+                 headers: {
+                   Authorization: `token ${auth?.token}`,
+                   Accept: 'application/vnd.github+json',
+                 },
+               },
+             );
+             await fetchCollaborators();
+           } catch (err: any) {
+             Alert.alert('Error', err?.message ?? 'Could not remove collaborator');
+           } finally {
+             setRemovingCollab(null);
+           }
+         },
+       },
+     ]);
+   }, [name, fetchCollaborators]);
   /* ─── tree from flat list ─── */
   const tree = useMemo(() => buildTree(treeFiles), [treeFiles])
 
@@ -325,6 +379,9 @@ export default function RepoDetailScreen() {
       setRemoteUrl(rUrl)
       const linked = await isGitHubLinked().catch(() => false)
       setGhLinked(linked)
+      if (linked) {
+        fetchCollaborators().catch(() => {})
+      }
     } catch (err: any) {
       Alert.alert('Error', err?.message ?? 'Failed to load repo data')
     } finally {
@@ -1520,28 +1577,173 @@ export default function RepoDetailScreen() {
             {/* GitHub Sync & Collaborators */}
             {ghLinked && (
               <View className="mt-4">
-                {/* Add Collaborator UI */}
+                {/* ── Collaborators section ── */}
                 <View className="mb-4">
-                  <Text className="text-neutral-500 text-xs font-bold mb-2">Add Collaborator</Text>
-                  <View className="flex-row gap-2">
-                    <TextInput
-                      className="flex-1 bg-neutral-50 dark:bg-black text-black dark:text-neutral-100 px-3 py-2.5 rounded-md border border-neutral-200 dark:border-zinc-800 text-sm"
-                      value={collabUsername}
-                      onChangeText={setCollabUsername}
-                      placeholder="GitHub username"
-                      placeholderTextColor="#8b949e"
-                      autoCapitalize="none"
-                    />
-                    <TouchableOpacity
-                      className="px-4 py-2.5 rounded-md bg-[#2ea043] justify-center"
-                      onPress={handleAddCollaborator}
-                      disabled={addingCollab}
-                    >
-                      <Text className="text-white text-sm font-bold">Add</Text>
-                    </TouchableOpacity>
+                  <View className="flex-row items-center justify-between mb-2">
+                    <View className="flex-row items-center gap-1.5">
+                      <Github size={13} color="#8b949e" />
+                      <Text className="text-neutral-500 text-xs font-bold uppercase tracking-wider">
+                        Collaborators
+                      </Text>
+                      {collaborators.length > 0 && (
+                        <View className="px-1.5 py-0.5 rounded-full bg-neutral-200 dark:bg-zinc-800">
+                          <Text className="text-neutral-600 dark:text-neutral-400 text-[10px] font-bold">
+                            {collaborators.length}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <View className="flex-row gap-2">
+                      <TouchableOpacity
+                        onPress={fetchCollaborators}
+                        disabled={loadingCollabs}
+                        className="p-1"
+                      >
+                        {loadingCollabs ? (
+                          <ActivityIndicator size={12} color="#8b949e" />
+                        ) : (
+                          <RefreshCw size={13} color="#8b949e" />
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setShowAddCollabForm((v) => !v);
+                          setCollabStatus('');
+                          setCollabUsername('');
+                        }}
+                        className="flex-row items-center gap-1 px-2.5 py-1 rounded-lg bg-[#2ea043]/10 border border-[#2ea043]/30"
+                      >
+                        <Plus size={11} color="#2ea043" />
+                        <Text className="text-[#2ea043] text-[11px] font-bold">Add</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  {collabStatus && (
-                    <Text className="text-xs mt-2" style={{ color: collabStatusColor }}>{collabStatus}</Text>
+
+                  {/* Add form */}
+                  {showAddCollabForm && (
+                    <View className="mb-3 rounded-xl bg-neutral-50 dark:bg-zinc-900/50 border border-neutral-200 dark:border-zinc-800 p-3">
+                      <Text className="text-neutral-500 text-[11px] mb-2">
+                        Enter a GitHub username to invite as collaborator (push access).
+                      </Text>
+                      <View className="flex-row gap-2">
+                        <TextInput
+                          className="flex-1 bg-white dark:bg-black text-black dark:text-neutral-100 px-3 py-2 rounded-lg border border-neutral-200 dark:border-zinc-800 text-sm"
+                          value={collabUsername}
+                          onChangeText={setCollabUsername}
+                          placeholder="github-username"
+                          placeholderTextColor="#8b949e"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                        <TouchableOpacity
+                          className="px-4 py-2 rounded-lg bg-[#2ea043] justify-center"
+                          onPress={handleAddCollaborator}
+                          disabled={addingCollab}
+                        >
+                          {addingCollab ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                          ) : (
+                            <Text className="text-white text-sm font-bold">Invite</Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                      {collabStatus !== '' && (
+                        <Text className="text-xs mt-2" style={{ color: collabStatusColor }}>
+                          {collabStatus}
+                        </Text>
+                      )}
+                    </View>
+                  )}
+
+                  {/* Collaborator list */}
+                  {loadingCollabs && collaborators.length === 0 ? (
+                    <View className="py-4 items-center">
+                      <ActivityIndicator size="small" color="#58a6ff" />
+                    </View>
+                  ) : collaborators.length === 0 ? (
+                    <View className="py-3 items-center rounded-xl bg-neutral-50 dark:bg-zinc-900/30 border border-dashed border-neutral-200 dark:border-zinc-700">
+                      <Text className="text-neutral-400 text-xs text-center">
+                        No collaborators yet.{`\n`}Tap Add to invite someone.
+                      </Text>
+                    </View>
+                  ) : (
+                    <View className="rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden">
+                      {collaborators.map((collab: any, idx: number) => {
+                        const permission = collab.permissions?.admin
+                          ? 'admin'
+                          : collab.permissions?.push
+                            ? 'write'
+                            : 'read';
+                        const permColor =
+                          permission === 'admin'
+                            ? '#f85149'
+                            : permission === 'write'
+                              ? '#2ea043'
+                              : '#8b949e';
+                        const isLast = idx === collaborators.length - 1;
+                        return (
+                          <View
+                            key={collab.login}
+                            className={`flex-row items-center px-4 py-3 ${
+                              !isLast ? 'border-b border-neutral-100 dark:border-zinc-800' : ''
+                            }`}
+                          >
+                            {/* Avatar */}
+                            <View
+                              className="w-9 h-9 rounded-full bg-neutral-100 dark:bg-zinc-800 overflow-hidden items-center justify-center mr-3"
+                            >
+                              {collab.avatar_url ? (
+                                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                                <Image
+                                  source={{ uri: collab.avatar_url }}
+                                  style={{ width: 36, height: 36, borderRadius: 18 }}
+                                />
+                              ) : (
+                                <Text className="text-neutral-500 text-sm font-bold">
+                                  {collab.login.slice(0, 2).toUpperCase()}
+                                </Text>
+                              )}
+                            </View>
+
+                            {/* Info */}
+                            <View className="flex-1">
+                              <Text className="text-black dark:text-neutral-100 text-sm font-semibold">
+                                @{collab.login}
+                              </Text>
+                              <View
+                                style={{
+                                  marginTop: 2,
+                                  alignSelf: 'flex-start',
+                                  paddingHorizontal: 6,
+                                  paddingVertical: 2,
+                                  borderRadius: 6,
+                                  backgroundColor: permColor + '18',
+                                  borderWidth: 1,
+                                  borderColor: permColor + '44',
+                                }}
+                              >
+                                <Text style={{ color: permColor, fontSize: 10, fontWeight: '700' }}>
+                                  {permission}
+                                </Text>
+                              </View>
+                            </View>
+
+                            {/* Remove */}
+                            <TouchableOpacity
+                              onPress={() => handleRemoveCollaborator(collab.login)}
+                              disabled={removingCollab === collab.login}
+                              className="p-2"
+                            >
+                              {removingCollab === collab.login ? (
+                                <ActivityIndicator size={14} color="#f85149" />
+                              ) : (
+                                <Trash2 size={15} color="#f8514960" />
+                              )}
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })}
+                    </View>
                   )}
                 </View>
                 {remoteUrl ? (
