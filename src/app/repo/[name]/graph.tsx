@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect, useMemo } from 'react'
+import React, { useCallback, useState, useEffect, useMemo, useRef } from 'react'
 import {
   View,
   Text,
@@ -6,9 +6,12 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
+  TextInput,
+  Animated,
+  Clipboard,
+  Dimensions,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-
 import {
   currentBranch,
   listBranches,
@@ -21,13 +24,13 @@ const BRANCH_COLORS = [
   '#58a6ff', // blue
   '#7ee787', // green
   '#d2a8ff', // purple
-  '#f78166', // orange
-  '#ff7b72', // red
-  '#79c0ff', // light blue
   '#ffa657', // amber
-  '#d29922', // yellow
-  '#e6edf3', // white
+  '#ff7b72', // red
+  '#79c0ff', // light-blue
+  '#f2cc60', // yellow
+  '#56d364', // lime
   '#bc8cff', // violet
+  '#f0883e', // orange
 ]
 
 /* ─────────── types ─────────── */
@@ -36,10 +39,11 @@ type GraphCommit = {
   shortOid: string
   message: string
   author: string
+  email: string
   timestamp: number
   parents: string[]
-  branches: string[] // branch names whose tip is this commit
-  column: number // assigned graph column
+  branches: string[]
+  column: number
   branchColor: string
 }
 
@@ -64,18 +68,439 @@ function timeAgo(ts: number) {
 }
 
 function formatDate(ts: number) {
-  const d = new Date(ts * 1000)
-  return d.toLocaleDateString('en-US', {
+  return new Date(ts * 1000).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   })
 }
 
-/* ═══════════════ COMPONENT ═══════════════ */
+function initials(name: string) {
+  return name
+    .split(' ')
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2)
+}
+
+/* ─────────── Constants ─────────── */
+const COL_WIDTH = 24
+const NODE_R = 6
+const GRAPH_PAD = 12
+
+/* ═══════════════ ANIMATED COMMIT ROW ═══════════════ */
+function CommitRow({
+  commit,
+  isExpanded,
+  onToggle,
+  maxColumns,
+  branchInfos,
+  activeBranch,
+  current,
+  isLast,
+  showAllColumns,
+}: {
+  commit: GraphCommit
+  isExpanded: boolean
+  onToggle: () => void
+  maxColumns: number
+  branchInfos: BranchInfo[]
+  activeBranch: string | null
+  current: string
+  isLast: boolean
+  showAllColumns: boolean
+}) {
+  const expandAnim = useRef(new Animated.Value(isExpanded ? 1 : 0)).current
+
+  useEffect(() => {
+    Animated.spring(expandAnim, {
+      toValue: isExpanded ? 1 : 0,
+      useNativeDriver: false,
+      tension: 120,
+      friction: 14,
+    }).start()
+  }, [isExpanded])
+
+  const isMerge = commit.parents.length > 1
+  const graphWidth = showAllColumns ? COL_WIDTH * maxColumns + GRAPH_PAD : COL_WIDTH + GRAPH_PAD
+  const nodeX = showAllColumns
+    ? commit.column * COL_WIDTH + GRAPH_PAD
+    : GRAPH_PAD
+  const nodeY = 22 // center vertically within the row head
+
+  return (
+    <View>
+      <TouchableOpacity
+        activeOpacity={0.75}
+        onPress={onToggle}
+        style={{ flexDirection: 'row', paddingVertical: 0 }}
+      >
+        {/* ── Graph lane ── */}
+        <View style={{ width: graphWidth, minHeight: 48 }}>
+          {/* Vertical lane lines */}
+          {showAllColumns &&
+            branchInfos.map((bi) => {
+              if (activeBranch !== null && bi.name !== activeBranch) return null
+              return (
+                <View
+                  key={bi.name}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    left: bi.column * COL_WIDTH + GRAPH_PAD + NODE_R - 1,
+                    width: 2,
+                    backgroundColor: bi.color + '28',
+                  }}
+                />
+              )
+            })}
+
+          {/* Single-branch lane */}
+          {!showAllColumns && (
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: GRAPH_PAD + NODE_R - 1,
+                width: 2,
+                backgroundColor: commit.branchColor + '40',
+              }}
+            />
+          )}
+
+          {/* Merge arc (horizontal connector) */}
+          {isMerge && showAllColumns && (
+            <View
+              style={{
+                position: 'absolute',
+                top: nodeY + NODE_R - 1,
+                left: nodeX + NODE_R,
+                width: COL_WIDTH * 1.5,
+                height: 2,
+                backgroundColor: commit.branchColor + '55',
+              }}
+            />
+          )}
+
+          {/* Commit node */}
+          <View
+            style={{
+              position: 'absolute',
+              top: nodeY - NODE_R,
+              left: nodeX - NODE_R,
+              width: NODE_R * 2,
+              height: NODE_R * 2,
+              borderRadius: isMerge ? 3 : NODE_R,
+              backgroundColor: commit.branchColor,
+              zIndex: 3,
+              borderWidth: commit.branches.includes(current) ? 2 : 0,
+              borderColor: '#ffffff',
+            }}
+          />
+        </View>
+
+        {/* ── Commit info ── */}
+        <View
+          style={{
+            flex: 1,
+            paddingVertical: 10,
+            paddingRight: 16,
+            borderBottomWidth: isLast ? 0 : 1,
+            borderBottomColor: '#21262d',
+          }}
+        >
+          {/* Branch tags */}
+          {commit.branches.length > 0 && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+              {commit.branches.map((br) => {
+                const info = branchInfos.find((b) => b.name === br)
+                const col = info?.color ?? '#58a6ff'
+                const isCurrent = br === current
+                return (
+                  <View
+                    key={br}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingHorizontal: 8,
+                      paddingVertical: 3,
+                      borderRadius: 20,
+                      backgroundColor: col + '1a',
+                      borderWidth: 1,
+                      borderColor: col + '55',
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: col,
+                        marginRight: 5,
+                      }}
+                    />
+                    <Text style={{ color: col, fontSize: 10, fontWeight: '700', letterSpacing: 0.3 }}>
+                      {br}
+                    </Text>
+                    {isCurrent && (
+                      <View
+                        style={{
+                          marginLeft: 4,
+                          backgroundColor: '#7ee787',
+                          borderRadius: 4,
+                          paddingHorizontal: 4,
+                          paddingVertical: 1,
+                        }}
+                      >
+                        <Text style={{ color: '#0d1117', fontSize: 8, fontWeight: '800' }}>HEAD</Text>
+                      </View>
+                    )}
+                  </View>
+                )
+              })}
+            </View>
+          )}
+
+          {/* Commit message */}
+          <Text
+            style={{
+              color: '#e6edf3',
+              fontSize: 13,
+              fontWeight: '600',
+              lineHeight: 19,
+            }}
+            numberOfLines={isExpanded ? undefined : 1}
+          >
+            {commit.message.split('\n')[0]}
+          </Text>
+
+          {/* Meta row */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, flexWrap: 'wrap', gap: 6 }}>
+            {/* Avatar */}
+            <View
+              style={{
+                width: 18,
+                height: 18,
+                borderRadius: 9,
+                backgroundColor: commit.branchColor + '33',
+                borderWidth: 1,
+                borderColor: commit.branchColor + '66',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={{ color: commit.branchColor, fontSize: 7, fontWeight: '800' }}>
+                {initials(commit.author)}
+              </Text>
+            </View>
+
+            <Text style={{ color: '#8b949e', fontSize: 11, fontWeight: '500' }}>
+              {commit.author}
+            </Text>
+
+            <Text style={{ color: '#30363d', fontSize: 11 }}>·</Text>
+
+            <Text style={{ color: '#58a6ff', fontSize: 11, fontFamily: 'monospace', fontWeight: '600' }}>
+              {commit.shortOid}
+            </Text>
+
+            <Text style={{ color: '#30363d', fontSize: 11 }}>·</Text>
+
+            <Text style={{ color: '#484f58', fontSize: 11 }}>
+              {timeAgo(commit.timestamp)}
+            </Text>
+
+            {isMerge && (
+              <View
+                style={{
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                  borderRadius: 4,
+                  backgroundColor: '#d2a8ff18',
+                  borderWidth: 1,
+                  borderColor: '#d2a8ff44',
+                }}
+              >
+                <Text style={{ color: '#d2a8ff', fontSize: 9, fontWeight: '800', letterSpacing: 0.5 }}>
+                  MERGE
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+
+      {/* ── Expanded panel ── */}
+      {isExpanded && (
+        <View
+          style={{
+            marginLeft: graphWidth,
+            marginRight: 12,
+            marginBottom: 8,
+            backgroundColor: '#0a0a0a',
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: '#1a1a1a',
+            padding: 16,
+          }}
+        >
+          {/* Full hash */}
+          <Text style={{ color: '#484f58', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 4 }}>
+            COMMIT HASH
+          </Text>
+          <TouchableOpacity
+            onPress={() => {
+              try { Clipboard.setString(commit.oid) } catch {}
+            }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: '#111111',
+              borderRadius: 8,
+              paddingHorizontal: 10,
+              paddingVertical: 7,
+              marginBottom: 14,
+            }}
+          >
+            <Text style={{ color: '#58a6ff', fontSize: 12, fontFamily: 'monospace', flex: 1 }}>
+              {commit.oid}
+            </Text>
+            <Text style={{ color: '#484f58', fontSize: 10, marginLeft: 6 }}>
+              tap to copy
+            </Text>
+          </TouchableOpacity>
+
+          {/* Full message */}
+          {commit.message.includes('\n') && (
+            <>
+              <Text style={{ color: '#484f58', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 4 }}>
+                FULL MESSAGE
+              </Text>
+              <View style={{ backgroundColor: '#21262d', borderRadius: 8, padding: 10, marginBottom: 14 }}>
+                <Text style={{ color: '#c9d1d9', fontSize: 12, lineHeight: 18 }}>
+                  {commit.message}
+                </Text>
+              </View>
+            </>
+          )}
+
+          {/* Author + Date */}
+          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 14 }}>
+            <View style={{ flex: 1, backgroundColor: '#21262d', borderRadius: 8, padding: 10 }}>
+              <Text style={{ color: '#484f58', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 4 }}>
+                AUTHOR
+              </Text>
+              <View
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 14,
+                  backgroundColor: commit.branchColor + '25',
+                  borderWidth: 1.5,
+                  borderColor: commit.branchColor + '66',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 6,
+                }}
+              >
+                <Text style={{ color: commit.branchColor, fontSize: 10, fontWeight: '800' }}>
+                  {initials(commit.author)}
+                </Text>
+              </View>
+              <Text style={{ color: '#e6edf3', fontSize: 12, fontWeight: '600' }}>
+                {commit.author}
+              </Text>
+            </View>
+            <View style={{ flex: 1, backgroundColor: '#21262d', borderRadius: 8, padding: 10 }}>
+              <Text style={{ color: '#484f58', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 4 }}>
+                DATE
+              </Text>
+              <Text style={{ color: '#e6edf3', fontSize: 11, marginTop: 6 }}>
+                {formatDate(commit.timestamp)}
+              </Text>
+              <Text style={{ color: '#484f58', fontSize: 11, marginTop: 2 }}>
+                {timeAgo(commit.timestamp)}
+              </Text>
+            </View>
+          </View>
+
+          {/* Parents */}
+          <Text style={{ color: '#484f58', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 6 }}>
+            PARENTS ({commit.parents.length})
+          </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: commit.branches.length > 0 ? 14 : 0 }}>
+            {commit.parents.length === 0 ? (
+              <View style={{ backgroundColor: '#7ee787' + '18', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: '#7ee787' + '44' }}>
+                <Text style={{ color: '#7ee787', fontSize: 11, fontWeight: '600' }}>⬤ Initial commit</Text>
+              </View>
+            ) : commit.parents.map((p) => (
+              <View
+                key={p}
+                style={{
+                  backgroundColor: '#1f6feb18',
+                  borderRadius: 6,
+                  paddingHorizontal: 8,
+                  paddingVertical: 4,
+                  borderWidth: 1,
+                  borderColor: '#1f6feb44',
+                }}
+              >
+                <Text style={{ color: '#58a6ff', fontSize: 11, fontFamily: 'monospace', fontWeight: '600' }}>
+                  {p.slice(0, 7)}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Branch tips */}
+          {commit.branches.length > 0 && (
+            <>
+              <Text style={{ color: '#484f58', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 6 }}>
+                BRANCH TIPS
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {commit.branches.map((br) => {
+                  const info = branchInfos.find((b) => b.name === br)
+                  const col = info?.color ?? '#58a6ff'
+                  return (
+                    <View
+                      key={br}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        borderRadius: 20,
+                        backgroundColor: col + '1a',
+                        borderWidth: 1,
+                        borderColor: col + '55',
+                        gap: 5,
+                      }}
+                    >
+                      <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: col }} />
+                      <Text style={{ color: col, fontSize: 11, fontWeight: '700' }}>{br}</Text>
+                    </View>
+                  )
+                })}
+              </View>
+            </>
+          )}
+        </View>
+      )}
+    </View>
+  )
+}
+
+/* ═══════════════ MAIN SCREEN ═══════════════ */
 export default function BranchGraphScreen() {
   const router = useRouter()
   const { name } = useLocalSearchParams<{ name: string }>()
+  const { width: SCREEN_W } = Dimensions.get('window')
 
   const [loading, setLoading] = useState(true)
   const [graphCommits, setGraphCommits] = useState<GraphCommit[]>([])
@@ -84,6 +509,8 @@ export default function BranchGraphScreen() {
   const [current, setCurrent] = useState('main')
   const [expandedOid, setExpandedOid] = useState<string | null>(null)
   const [maxColumns, setMaxColumns] = useState(1)
+  const [search, setSearch] = useState('')
+  const [showSearch, setShowSearch] = useState(false)
 
   /* ─── load data ─── */
   const loadGraph = useCallback(async () => {
@@ -96,29 +523,24 @@ export default function BranchGraphScreen() {
       ])
       setCurrent(cur ?? 'main')
 
-      // Resolve tips for each branch
       const branchTips: { name: string; oid: string }[] = []
       for (const br of branches) {
         try {
           const oid = await resolveRef(name, br)
           branchTips.push({ name: br, oid })
-        } catch {
-          // skip unresolvable branches
-        }
+        } catch {}
       }
 
-      // Fetch logs for each branch
       const allCommitsMap = new Map<string, GraphCommit>()
-      const branchTipMap = new Map<string, string[]>() // oid -> branch names
+      const branchTipMap = new Map<string, string[]>()
 
       for (let i = 0; i < branchTips.length; i++) {
         const bt = branchTips[i]
-        // track tip oid -> branch name mapping
         if (!branchTipMap.has(bt.oid)) branchTipMap.set(bt.oid, [])
         branchTipMap.get(bt.oid)!.push(bt.name)
 
         try {
-          const log = await getLog(name, { depth: 40, ref: bt.name })
+          const log = await getLog(name, { depth: 50, ref: bt.name })
           for (const entry of log) {
             if (!allCommitsMap.has(entry.oid)) {
               allCommitsMap.set(entry.oid, {
@@ -126,6 +548,7 @@ export default function BranchGraphScreen() {
                 shortOid: entry.oid.slice(0, 7),
                 message: entry.commit?.message?.trim() ?? '',
                 author: entry.commit?.author?.name ?? 'Unknown',
+                email: entry.commit?.author?.email ?? '',
                 timestamp: entry.commit?.author?.timestamp ?? 0,
                 parents: entry.commit?.parent ?? [],
                 branches: [],
@@ -134,24 +557,18 @@ export default function BranchGraphScreen() {
               })
             }
           }
-        } catch {
-          // skip branch log failures
-        }
+        } catch {}
       }
 
-      // Assign branch labels to tip commits
       for (const [oid, brNames] of branchTipMap.entries()) {
         const c = allCommitsMap.get(oid)
         if (c) c.branches = brNames
       }
 
-      // Sort commits by timestamp descending (newest first)
       const sorted = Array.from(allCommitsMap.values()).sort(
         (a, b) => b.timestamp - a.timestamp,
       )
 
-      // Assign columns using a simple graph layout algorithm
-      // Each branch gets its own column; commits inherit column from their branch
       const infos: BranchInfo[] = branchTips.map((bt, i) => ({
         name: bt.name,
         tipOid: bt.oid,
@@ -159,384 +576,302 @@ export default function BranchGraphScreen() {
         column: i,
       }))
 
-      // Build oid -> branch column mappings by tracing each branch's log
       const oidColumnMap = new Map<string, number>()
       const oidColorMap = new Map<string, string>()
 
       for (let i = 0; i < branchTips.length; i++) {
         try {
-          const log = await getLog(name, { depth: 40, ref: branchTips[i].name })
+          const log = await getLog(name, { depth: 50, ref: branchTips[i].name })
           for (const entry of log) {
-            // First branch to claim a commit wins (the branch whose tip reached it first)
             if (!oidColumnMap.has(entry.oid)) {
               oidColumnMap.set(entry.oid, i)
-              oidColorMap.set(
-                entry.oid,
-                BRANCH_COLORS[i % BRANCH_COLORS.length],
-              )
+              oidColorMap.set(entry.oid, BRANCH_COLORS[i % BRANCH_COLORS.length])
             }
           }
         } catch {}
       }
 
-      // Apply column assignments
       for (const c of sorted) {
         c.column = oidColumnMap.get(c.oid) ?? 0
         c.branchColor = oidColorMap.get(c.oid) ?? BRANCH_COLORS[0]
       }
 
-      const cols = branchTips.length || 1
-      setMaxColumns(cols)
+      setMaxColumns(branchTips.length || 1)
       setBranchInfos(infos)
       setGraphCommits(sorted)
-    } catch {
-      // silently fail
-    } finally {
-      setLoading(false)
-    }
+    } catch {}
+    finally { setLoading(false) }
   }, [name])
 
-  useEffect(() => {
-    loadGraph()
-  }, [loadGraph])
+  useEffect(() => { loadGraph() }, [loadGraph])
 
-  /* ─── derived: filter by active branch ─── */
+  /* ─── derived ─── */
   const visibleCommits = useMemo(() => {
-    if (!activeBranch) return graphCommits
-    const info = branchInfos.find((b) => b.name === activeBranch)
-    if (!info) return graphCommits
-    return graphCommits.filter((c) => c.column === info.column)
-  }, [graphCommits, activeBranch, branchInfos])
+    let list = graphCommits
+    if (activeBranch) {
+      const info = branchInfos.find((b) => b.name === activeBranch)
+      if (info) list = list.filter((c) => c.column === info.column)
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      list = list.filter(
+        (c) =>
+          c.message.toLowerCase().includes(q) ||
+          c.author.toLowerCase().includes(q) ||
+          c.shortOid.startsWith(q),
+      )
+    }
+    return list
+  }, [graphCommits, activeBranch, branchInfos, search])
 
-  /* ─── guard ─── */
+  const showAllColumns = !activeBranch && !search.trim()
+  const mergeCount = graphCommits.filter((c) => c.parents.length > 1).length
+  const uniqueAuthors = new Set(graphCommits.map((c) => c.author)).size
+
   if (!name) {
     return (
-      <View className="flex-1 bg-neutral-100 dark:bg-black items-center justify-center">
-        <Text className="text-black dark:text-neutral-100">Invalid repository</Text>
+      <View style={{ flex: 1, backgroundColor: '#000000', alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ color: '#8b949e' }}>Invalid repository</Text>
       </View>
     )
   }
 
-  const COL_WIDTH = 28
-  const GRAPH_LEFT = 16
-  const NODE_SIZE = 12
-
   return (
-    <View className="flex-1 bg-neutral-100 dark:bg-black">
+    <View style={{ flex: 1, backgroundColor: '#000000' }}>
+
       {/* ── Header ── */}
-      <View className="flex-row items-center justify-between px-4 pt-14 pb-4 border-b border-neutral-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
-        <TouchableOpacity onPress={() => router.back()} className="p-2">
-          <Text className="text-[#58a6ff] text-2xl font-bold">‹</Text>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingTop: 56,
+          paddingBottom: 14,
+          paddingHorizontal: 16,
+          backgroundColor: '#000000',
+          borderBottomWidth: 1,
+          borderBottomColor: '#111111',
+        }}
+      >
+        <TouchableOpacity onPress={() => router.back()} style={{ padding: 4, marginRight: 8 }}>
+          <Text style={{ color: '#58a6ff', fontSize: 24, fontWeight: '300', lineHeight: 28 }}>‹</Text>
         </TouchableOpacity>
-        <View className="flex-1 items-center">
-          <Text className="text-black dark:text-neutral-100 text-lg font-bold">Branch Graph</Text>
-          <Text className="text-neutral-500 text-xs font-medium">{name}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: '#e6edf3', fontSize: 17, fontWeight: '700' }}>Branch Graph</Text>
+          <Text style={{ color: '#484f58', fontSize: 12, marginTop: 1 }}>{name}</Text>
         </View>
-        <View className="w-8" />
+        <TouchableOpacity
+          onPress={() => { setShowSearch((v) => !v); setSearch('') }}
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 17,
+            backgroundColor: showSearch ? '#1f6feb' : '#0a0a0a',
+            borderWidth: 1,
+            borderColor: showSearch ? '#58a6ff' : '#30363d',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Text style={{ color: showSearch ? '#fff' : '#8b949e', fontSize: 15 }}>
+            {showSearch ? '✕' : '⌕'}
+          </Text>
+        </TouchableOpacity>
       </View>
+
+      {/* ── Search bar ── */}
+      {showSearch && (
+        <View
+          style={{
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            backgroundColor: '#0a0a0a',
+            borderBottomWidth: 1,
+            borderBottomColor: '#21262d',
+          }}
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: '#0a0a0a',
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: search ? '#1f6feb' : '#30363d',
+              paddingHorizontal: 12,
+              height: 38,
+            }}
+          >
+            <Text style={{ color: '#484f58', fontSize: 14, marginRight: 8 }}>⌕</Text>
+            <TextInput
+              style={{ flex: 1, color: '#e6edf3', fontSize: 13 }}
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search message, author, hash…"
+              placeholderTextColor="#484f58"
+              autoFocus
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {search.length > 0 && (
+              <TouchableOpacity onPress={() => setSearch('')}>
+                <Text style={{ color: '#484f58', fontSize: 13, marginLeft: 6 }}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      )}
 
       {/* ── Branch filter chips ── */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        className="border-b border-neutral-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50"
+        style={{ backgroundColor: '#000000', borderBottomWidth: 1, borderBottomColor: '#111111', flexGrow: 0 }}
+        contentContainerStyle={{ paddingHorizontal: 14, paddingVertical: 10, gap: 8, flexDirection: 'row', alignItems: 'center' }}
       >
-        <View className="flex-row px-4 py-3 gap-2 items-center">
+        <TouchableOpacity
+          onPress={() => setActiveBranch(null)}
+          style={{
+            paddingHorizontal: 12,
+            paddingVertical: 5,
+            borderRadius: 20,
+            backgroundColor: activeBranch === null ? '#1f6feb' : '#0a0a0a',
+            borderWidth: 1,
+            borderColor: activeBranch === null ? '#58a6ff' : '#222222',
+          }}
+        >
+          <Text style={{ color: activeBranch === null ? '#fff' : '#8b949e', fontSize: 12, fontWeight: '700' }}>
+            All
+          </Text>
+        </TouchableOpacity>
+
+        {branchInfos.map((bi) => (
           <TouchableOpacity
-            className={`px-4 py-2 rounded-xl border  ${
-              activeBranch === null
-                ? 'bg-blue-50 dark:bg-zinc-800 border-[#1f6feb] dark:border-[#58a6ff]'
-                : 'bg-white dark:bg-black border-neutral-200 dark:border-zinc-800'
-            }`}
-            onPress={() => setActiveBranch(null)}
+            key={bi.name}
+            onPress={() => setActiveBranch(activeBranch === bi.name ? null : bi.name)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingHorizontal: 12,
+              paddingVertical: 5,
+              borderRadius: 20,
+              backgroundColor: activeBranch === bi.name ? bi.color + '22' : '#0a0a0a',
+              borderWidth: 1,
+              borderColor: activeBranch === bi.name ? bi.color : '#222222',
+              gap: 6,
+            }}
           >
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: bi.color }} />
             <Text
-              className={`text-xs font-bold tracking-wide uppercase ${activeBranch === null ? 'text-[#1f6feb] dark:text-[#58a6ff]' : 'text-neutral-500'}`}
+              style={{
+                color: activeBranch === bi.name ? bi.color : '#8b949e',
+                fontSize: 12,
+                fontWeight: activeBranch === bi.name ? '700' : '500',
+              }}
             >
-              All
+              {bi.name}
             </Text>
-          </TouchableOpacity>
-          {branchInfos.map((bi) => (
-            <TouchableOpacity
-              key={bi.name}
-              className={`flex-row items-center gap-2 px-4 py-2 rounded-xl border  ${
-                activeBranch === bi.name
-                  ? 'bg-neutral-50 dark:bg-zinc-800 border-[' + bi.color + ']'
-                  : 'bg-white dark:bg-black border-neutral-200 dark:border-zinc-800'
-              }`}
-              onPress={() =>
-                setActiveBranch(activeBranch === bi.name ? null : bi.name)
-              }
-            >
+            {bi.name === current && (
               <View
-                className="w-3 h-3 rounded-full "
-                style={{ backgroundColor: bi.color }}
-              />
-              <Text
-                className={`text-xs ${activeBranch === bi.name ? 'text-black dark:text-neutral-100 font-bold' : 'text-neutral-500 font-medium'}`}
+                style={{
+                  backgroundColor: '#7ee787',
+                  borderRadius: 4,
+                  paddingHorizontal: 4,
+                  paddingVertical: 1,
+                }}
               >
-                {bi.name}
-              </Text>
-              {bi.name === current && (
-                <Text className="text-[#7ee787] text-[10px] ml-1 font-bold">★</Text>
-              )}
-            </TouchableOpacity>
-          ))}
-        </View>
+                <Text style={{ color: '#0d1117', fontSize: 8, fontWeight: '800' }}>HEAD</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        ))}
       </ScrollView>
 
-      {/* ── Legend ── */}
-      <View className="px-5 py-3 border-b border-neutral-200 dark:border-zinc-800 bg-neutral-50 dark:bg-black">
-        <Text className="text-neutral-500 text-[11px] font-bold uppercase tracking-wider">
-          {branchInfos.length} branch{branchInfos.length !== 1 ? 'es' : ''} ·{' '}
-          {graphCommits.length} commits ·{' '}
-          {activeBranch ? `Showing ${activeBranch}` : 'Showing all branches'}
-        </Text>
+      {/* ── Stats banner ── */}
+      <View
+        style={{
+          flexDirection: 'row',
+          paddingHorizontal: 16,
+          paddingVertical: 10,
+          backgroundColor: '#000000',
+          borderBottomWidth: 1,
+          borderBottomColor: '#111111',
+          gap: 20,
+        }}
+      >
+        {[
+          { label: 'Commits', value: visibleCommits.length, color: '#58a6ff' },
+          { label: 'Branches', value: branchInfos.length, color: '#7ee787' },
+          { label: 'Merges', value: mergeCount, color: '#d2a8ff' },
+          { label: 'Authors', value: uniqueAuthors, color: '#ffa657' },
+        ].map((stat) => (
+          <View key={stat.label} style={{ alignItems: 'center' }}>
+            <Text style={{ color: stat.color, fontSize: 16, fontWeight: '700' }}>{stat.value}</Text>
+            <Text style={{ color: '#484f58', fontSize: 10, marginTop: 1 }}>{stat.label}</Text>
+          </View>
+        ))}
+        {search ? (
+          <View style={{ flex: 1, alignItems: 'flex-end', justifyContent: 'center' }}>
+            <Text style={{ color: '#f2cc60', fontSize: 11, fontWeight: '600' }}>
+              {visibleCommits.length} result{visibleCommits.length !== 1 ? 's' : ''}
+            </Text>
+          </View>
+        ) : activeBranch ? (
+          <View style={{ flex: 1, alignItems: 'flex-end', justifyContent: 'center' }}>
+            <Text style={{ color: '#8b949e', fontSize: 11 }}>Showing {activeBranch}</Text>
+          </View>
+        ) : null}
       </View>
 
-      {/* ── Graph ── */}
+      {/* ── Commit list ── */}
       <ScrollView
-        className="flex-1"
+        style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 140 }}
         refreshControl={
-          <RefreshControl
-            refreshing={loading}
-            onRefresh={loadGraph}
-            tintColor="#58a6ff"
-          />
+          <RefreshControl refreshing={loading} onRefresh={loadGraph} tintColor="#58a6ff" />
         }
       >
         {loading ? (
-          <View className="mt-8 items-center">
+          <View style={{ marginTop: 60, alignItems: 'center', gap: 16 }}>
             <ActivityIndicator color="#58a6ff" size="large" />
-            <Text className="text-neutral-500 mt-4 text-sm font-medium">
-              Building graph...
-            </Text>
+            <Text style={{ color: '#333333', fontSize: 13 }}>Building graph…</Text>
           </View>
         ) : visibleCommits.length === 0 ? (
-          <View className="mt-8 items-center">
-            <Text className="text-neutral-500 text-sm font-medium">No commits found</Text>
+          <View style={{ marginTop: 60, alignItems: 'center', gap: 8 }}>
+            <Text style={{ color: '#484f58', fontSize: 28 }}>
+              {search ? '🔍' : '🌿'}
+            </Text>
+            <Text style={{ color: '#8b949e', fontSize: 14, fontWeight: '600' }}>
+              {search ? 'No commits match your search' : 'No commits found'}
+            </Text>
+            {search && (
+              <TouchableOpacity onPress={() => setSearch('')}>
+                <Text style={{ color: '#58a6ff', fontSize: 13, marginTop: 4 }}>Clear search</Text>
+              </TouchableOpacity>
+            )}
           </View>
         ) : (
-          <View style={{ paddingLeft: GRAPH_LEFT }}>
-            {visibleCommits.map((commit, idx) => {
-              const isExpanded = expandedOid === commit.oid
-              const isMerge = commit.parents.length > 1
-              const isLast = idx === visibleCommits.length - 1
+          <View style={{ paddingTop: 4 }}>
+            {visibleCommits.map((commit, idx) => (
+              <CommitRow
+                key={commit.oid}
+                commit={commit}
+                isExpanded={expandedOid === commit.oid}
+                onToggle={() => setExpandedOid(expandedOid === commit.oid ? null : commit.oid)}
+                maxColumns={maxColumns}
+                branchInfos={branchInfos}
+                activeBranch={activeBranch}
+                current={current}
+                isLast={idx === visibleCommits.length - 1}
+                showAllColumns={showAllColumns}
+              />
+            ))}
 
-              return (
-                <View key={commit.oid}>
-                  <TouchableOpacity
-                    className="flex-row"
-                    activeOpacity={0.7}
-                    onPress={() =>
-                      setExpandedOid(isExpanded ? null : commit.oid)
-                    }
-                  >
-                    {/* ── Graph lines ── */}
-                    <View
-                      style={{ width: COL_WIDTH * maxColumns + 8 }}
-                      className="items-start"
-                    >
-                      {/* Vertical lines for each active column */}
-                      <View className="absolute top-0 bottom-0 left-0 right-0">
-                        {branchInfos.map((bi) => {
-                          if (activeBranch !== null && bi.name !== activeBranch)
-                            return null
-                          return (
-                            <View
-                              key={bi.name}
-                              className="absolute top-0 bottom-0"
-                              style={{
-                                left: bi.column * COL_WIDTH + NODE_SIZE / 2,
-                                width: 2,
-                                backgroundColor: bi.color + '33',
-                              }}
-                            />
-                          )
-                        })}
-                      </View>
-
-                      {/* Commit node */}
-                      <View
-                        style={{
-                          left: commit.column * COL_WIDTH,
-                          top: 14,
-                          width: NODE_SIZE,
-                          height: NODE_SIZE,
-                          borderRadius: isMerge ? 2 : NODE_SIZE / 2,
-                          backgroundColor: commit.branchColor,
-                          borderWidth: isMerge ? 2 : 0,
-                          borderColor: 'black',
-                          zIndex: 2,
-                        }}
-                      />
-
-                      {/* Merge line (diagonal from parent column) */}
-                      {isMerge && (
-                        <View
-                          className="absolute"
-                          style={{
-                            top: 20,
-                            left: commit.column * COL_WIDTH + NODE_SIZE / 2,
-                            width:
-                              Math.abs(
-                                ((branchInfos.find(
-                                  (b) => b.column !== commit.column,
-                                )?.column ?? commit.column + 1) -
-                                  commit.column) *
-                                  COL_WIDTH,
-                              ) || COL_WIDTH,
-                            height: 2,
-                            backgroundColor: commit.branchColor + '66',
-                          }}
-                        />
-                      )}
-                    </View>
-
-                    {/* ── Commit details ── */}
-                    <View
-                      className={`flex-1 py-3 pr-4 ml-2 ${!isLast ? 'border-b border-neutral-200 dark:border-zinc-800' : ''}`}
-                    >
-                      {/* Branch labels */}
-                      {commit.branches.length > 0 && (
-                        <View className="flex-row flex-wrap gap-2 mb-2">
-                          {commit.branches.map((br) => {
-                            const info = branchInfos.find((b) => b.name === br)
-                            const color = info?.color ?? '#58a6ff'
-                            return (
-                              <View
-                                key={br}
-                                className="flex-row items-center gap-1.5 px-2 py-1 rounded-md "
-                                style={{
-                                  backgroundColor: color + '22',
-                                  borderWidth: 1,
-                                  borderColor: color + '66',
-                                }}
-                              >
-                                <View
-                                  className="w-1.5 h-1.5 rounded-full"
-                                  style={{ backgroundColor: color }}
-                                />
-                                <Text
-                                  className="text-[10px] font-bold uppercase tracking-wider"
-                                  style={{ color }}
-                                >
-                                  {br}
-                                </Text>
-                                {br === current && (
-                                  <Text className="text-[#7ee787] text-[10px] ml-0.5">
-                                    ★
-                                  </Text>
-                                )}
-                              </View>
-                            )
-                          })}
-                        </View>
-                      )}
-
-                      {/* Commit message */}
-                      <Text
-                        className="text-black dark:text-neutral-100 text-[13px] font-medium leading-snug"
-                        numberOfLines={isExpanded ? undefined : 1}
-                      >
-                        {commit.message.split('\n')[0]}
-                      </Text>
-
-                      {/* Meta */}
-                      <View className="flex-row items-center mt-2 gap-3 flex-wrap">
-                        <Text className="text-neutral-400 dark:text-neutral-500 text-xs font-mono font-bold tracking-wider">
-                          {commit.shortOid}
-                        </Text>
-                        <View className="w-1 h-1 rounded-full bg-neutral-300 dark:bg-zinc-700" />
-                        <Text className="text-neutral-500 text-xs font-medium">
-                          {commit.author}
-                        </Text>
-                        <View className="w-1 h-1 rounded-full bg-neutral-300 dark:bg-zinc-700" />
-                        <Text className="text-neutral-500 text-xs font-medium">
-                          {timeAgo(commit.timestamp)}
-                        </Text>
-                        {isMerge && (
-                          <View className="px-1.5 py-0.5 rounded ml-2 border border-[#d2a8ff]/30 bg-[#d2a8ff]/10">
-                            <Text className="text-[#d2a8ff] text-[9px] font-bold tracking-wider">
-                              MERGE
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-
-                      {/* Expanded details */}
-                      {isExpanded && (
-                        <View className="mt-3 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 p-4  mb-2">
-                          <Text className="text-neutral-400 dark:text-neutral-500 text-[10px] font-bold uppercase tracking-wider mb-1.5">
-                            Full commit hash
-                          </Text>
-                          <Text className="text-black dark:text-neutral-200 text-xs font-mono font-medium mb-3">
-                            {commit.oid}
-                          </Text>
-
-                          {commit.message.includes('\n') && (
-                            <>
-                              <Text className="text-neutral-400 dark:text-neutral-500 text-[10px] font-bold uppercase tracking-wider mb-1.5">
-                                Full message
-                              </Text>
-                              <Text className="text-black dark:text-neutral-300 text-xs mb-3 leading-relaxed">
-                                {commit.message}
-                              </Text>
-                            </>
-                          )}
-
-                          <View className="flex-row mb-3">
-                            <View className="flex-1">
-                              <Text className="text-neutral-400 dark:text-neutral-500 text-[10px] font-bold uppercase tracking-wider mb-1.5">
-                                Author
-                              </Text>
-                              <Text className="text-black dark:text-neutral-200 text-xs font-medium">
-                                {commit.author}
-                              </Text>
-                            </View>
-
-                            <View className="flex-1">
-                              <Text className="text-neutral-400 dark:text-neutral-500 text-[10px] font-bold uppercase tracking-wider mb-1.5">
-                                Date
-                              </Text>
-                              <Text className="text-black dark:text-neutral-200 text-xs font-medium">
-                                {formatDate(commit.timestamp)}
-                              </Text>
-                            </View>
-                          </View>
-
-                          <Text className="text-neutral-400 dark:text-neutral-500 text-[10px] font-bold uppercase tracking-wider mb-1.5">
-                            Parents ({commit.parents.length})
-                          </Text>
-                          <View className="flex-row flex-wrap gap-2">
-                            {commit.parents.map((p) => (
-                              <Text
-                                key={p}
-                                className="text-[#1f6feb] dark:text-[#58a6ff] text-xs font-mono font-medium"
-                              >
-                                {p.slice(0, 7)}
-                              </Text>
-                            ))}
-                          </View>
-
-                          {commit.branches.length > 0 && (
-                            <>
-                              <Text className="text-neutral-400 dark:text-neutral-500 text-[10px] font-bold uppercase tracking-wider mb-1.5 mt-3">
-                                Branch tips
-                              </Text>
-                              <Text className="text-[#238636] dark:text-[#7ee787] text-xs font-medium">
-                                {commit.branches.join(', ')}
-                              </Text>
-                            </>
-                          )}
-                        </View>
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                </View>
-              )
-            })}
+            {/* Footer hint */}
+            <View style={{ alignItems: 'center', paddingTop: 24, paddingBottom: 8 }}>
+              <Text style={{ color: '#1a1a1a', fontSize: 11 }}>
+                ─── end of history ───
+              </Text>
+            </View>
           </View>
         )}
       </ScrollView>

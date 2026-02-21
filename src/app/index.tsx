@@ -360,22 +360,11 @@ export default function HomeScreen() {
 
   return (
     <View className="flex-1 bg-neutral-100 dark:bg-black w-full">
-<<<<<<< HEAD
-      <View className="px-5 pt-5 pb-4 border-b border-neutral-200 dark:border-zinc-800 flex-row items-center justify-between">
-        <View className="flex-row items-center gap-2">
-          <Image
-            source={require('@/assets/images/logo.png')}
-            style={{ width: 64, height: 64 }}
-            resizeMode="contain"
-          />
-          <Text className="text-black dark:text-neutral-100 text-2xl font-extrabold">GitLane</Text>
-=======
       <View className="px-5 pt-6 pb-4 border-b border-neutral-200 dark:border-zinc-800 flex-row items-center justify-between">
         <View className="flex-row items-center gap-2">
           <Text className="text-black dark:text-neutral-100 text-5xl font-extrabold">GitLane</Text>
           {/* Online/offline indicator */}
           <View className={`w-2.5 h-2.5 rounded-full mt-2 ${online ? 'bg-green-500' : 'bg-red-500'}`} />
->>>>>>> 1867e689f2b344e482df06502fbedb98ed3bef0c
         </View>
         <View className="flex-row items-center gap-3">
           {ghLinked && (

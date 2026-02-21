@@ -6,11 +6,7 @@ import {
   ScrollView,
   Alert,
   TextInput,
-<<<<<<< HEAD
   Image,
-=======
-  ActivityIndicator,
->>>>>>> 1867e689f2b344e482df06502fbedb98ed3bef0c
 } from 'react-native'
 
 import { getAuthor, setAuthor } from '@/services/gitService';
