@@ -1799,11 +1799,23 @@ export default function RepoDetailScreen() {
                             {c.oid.slice(0, 7)}
                           </Text>
                         </Text>
-                        <View className="flex-row items-center mt-1">
-                          <Clock size={10} color="#8b949e" />
-                          <Text className="text-neutral-400 text-[10px] ml-1">
-                            {timeAgo(c.timestamp)}
-                          </Text>
+                        <View className="flex-row items-center mt-1 justify-between">
+                          <View className="flex-row items-center">
+                            <Clock size={10} color="#8b949e" />
+                            <Text className="text-neutral-400 text-[10px] ml-1">
+                              {timeAgo(c.timestamp)}
+                            </Text>
+                          </View>
+                          <TouchableOpacity 
+                            onPress={() => router.push({
+                                pathname: '/repo/[name]/rebase' as any,
+                                params: { name: name as string, baseOid: c.oid }
+                            })}
+                          >
+                            <Text className="text-[#d2a8ff] text-[10px] font-bold uppercase tracking-wider bg-[#d2a8ff]/10 px-2 py-0.5 rounded">
+                                Rebase from here
+                            </Text>
+                          </TouchableOpacity>
                         </View>
                       </View>
                     </View>

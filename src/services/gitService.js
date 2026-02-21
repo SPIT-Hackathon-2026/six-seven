@@ -776,6 +776,126 @@ export async function rebase(repoName, ontoBranch) {
   return { success: true, replayedCommits: replayed.length, newHead }
 }
 
+/**
+ * Perform an interactive rebase (100% offline).
+ * 
+ * @param {string} repoName
+ * @param {string} baseCommitOid The commit to rebase onto (e.g. HEAD~N oid)
+ * @param {Array<{ action: 'pick'|'drop'|'reword'|'squash', oid: string, newMessage?: string }>} actionPlan 
+ *   The sequence of instructions to rewrite the history. Must be ordered oldest to newest.
+ */
+export async function interactiveRebase(repoName, baseCommitOid, actionPlan) {
+  const dir = getRepoPath(repoName)
+  const ourBranch = await currentBranch(repoName)
+  const author = getAuthor()
+
+  if (!ourBranch) throw new Error('Cannot interactive rebase in detached HEAD state')
+  if (!baseCommitOid) throw new Error('Must specify base commit OID to rebase onto')
+
+  const originalHeadOid = await git.resolveRef({ fs, dir, ref: ourBranch })
+
+  // 1. Point our branch exactly at the base commit (dropping everything after it)
+  await fs.promises.writeFile(
+    `${dir}/.git/refs/heads/${ourBranch}`,
+    baseCommitOid + '\n',
+    'utf8',
+  )
+  await git.checkout({ fs, dir, ref: ourBranch, force: true })
+
+  // 2. We'll track the head exactly as it evolves
+  let currentHeadOid = baseCommitOid
+  const replayed = []
+
+  let pendingSquashMessage = ''
+
+  try {
+    for (let i = 0; i < actionPlan.length; i++) {
+        const { action, oid, newMessage } = actionPlan[i]
+
+        const originalCommitDesc = await git.readCommit({ fs, dir, oid })
+        const commitMsg = newMessage || originalCommitDesc.commit.message
+
+        if (action === 'drop') {
+            continue
+        }
+
+        if (action === 'pick' || action === 'reword') {
+            if (pendingSquashMessage) pendingSquashMessage = ''
+            
+            await cherryPick(repoName, oid)
+            let cherryPickedHead = await git.resolveRef({ fs, dir, ref: 'HEAD' })
+            
+            if (action === 'reword' && newMessage) {
+                const headDesc = await git.readCommit({ fs, dir, oid: cherryPickedHead })
+                cherryPickedHead = await git.commit({
+                    fs, dir,
+                    message: newMessage,
+                    author,
+                    tree: headDesc.commit.tree,
+                    parent: headDesc.commit.parent
+                })
+                await fs.promises.writeFile(`${dir}/.git/refs/heads/${ourBranch}`, cherryPickedHead + '\n', 'utf8')
+            }
+
+            currentHeadOid = cherryPickedHead
+            replayed.push({ oldOid: oid, newOid: currentHeadOid, action })
+        }
+
+        if (action === 'squash') {
+            await cherryPick(repoName, oid)
+            const newlyCherryPickedOid = await git.resolveRef({ fs, dir, ref: 'HEAD' })
+            const squashedTreeDesc = await git.readCommit({ fs, dir, oid: newlyCherryPickedOid })
+            
+            if (!pendingSquashMessage) {
+                const prevCommitDesc = await git.readCommit({ fs, dir, oid: currentHeadOid })
+                pendingSquashMessage = prevCommitDesc.commit.message.trim()
+            }
+            pendingSquashMessage += `\n\n* ${commitMsg.trim()}`
+            
+            const headCommitDesc = await git.readCommit({ fs, dir, oid: currentHeadOid })
+
+            const finalSquashOid = await git.commit({
+                fs, dir,
+                message: pendingSquashMessage,
+                author,
+                parent: headCommitDesc.commit.parent, // Skip currentHeadOid! Merge with grandparent.
+                tree: squashedTreeDesc.commit.tree 
+            })
+
+            await fs.promises.writeFile(`${dir}/.git/refs/heads/${ourBranch}`, finalSquashOid + '\n', 'utf8')
+            await git.checkout({ fs, dir, ref: ourBranch, force: true })
+            
+            currentHeadOid = finalSquashOid
+            
+            if (replayed.length > 0) {
+               replayed[replayed.length - 1].newOid = finalSquashOid
+               replayed[replayed.length - 1].action = 'squashed'
+            }
+            replayed.push({ oldOid: oid, newOid: currentHeadOid, action: 'squash' })
+        }
+    }
+
+    await appendReflog(repoName, {
+      action: 'interactive-rebase',
+      message: `interactive rebase (replayed ${replayed.length} actions)`,
+      from: originalHeadOid,
+      to: currentHeadOid,
+      branch: ourBranch,
+    })
+
+    return { success: true, originalHeadOid, newHeadOid: currentHeadOid }
+
+  } catch (err) {
+    await fs.promises.writeFile(
+      `${dir}/.git/refs/heads/${ourBranch}`,
+      originalHeadOid + '\n',
+      'utf8',
+    )
+    await git.checkout({ fs, dir, ref: ourBranch, force: true })
+    throw new Error(`Interactive rebase failed and was aborted: ${err.message}`)
+  }
+}
+
 // =====================================================================
 //  READ BLOB / TREE helpers (for code exploration)
 // =====================================================================

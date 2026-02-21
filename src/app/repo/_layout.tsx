@@ -5,7 +5,7 @@ export default function RepoLayout() {
     <Stack
       screenOptions={{
         headerShown: false,
-        animationEnabled: true,
+        animation: 'default',
       }}
     >
       <Stack.Screen name="[name]/index" options={{ title: 'Repository' }} />
@@ -22,6 +22,8 @@ export default function RepoLayout() {
       <Stack.Screen name="[name]/analytics" options={{ title: 'Analytics' }} />
       <Stack.Screen name="[name]/health" options={{ title: 'Health' }} />
       <Stack.Screen name="[name]/user-profile" options={{ title: 'User Profile' }} />
+      <Stack.Screen name="[name]/rebase" options={{ title: 'Interactive Rebase' }} />
+      <Stack.Screen name="[name]/chat" options={{ title: 'Chat' }} />
     </Stack>
   )
 }
