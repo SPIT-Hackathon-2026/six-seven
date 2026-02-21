@@ -5,8 +5,8 @@ import { Mail, Lock } from 'lucide-react-native';
 import { setAuthenticated } from '@/utils/auth';
 
 export default function LoginScreen() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('user@gmail.com');
+  const [password, setPassword] = useState('password123');
   const router = useRouter();
 
   const handleLogin = () => {
@@ -26,11 +26,11 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white dark:bg-black">
-      <View className="flex-1 px-6 justify-center pb-12">
+      <View className="flex-1 px-6 justify-center pb-40">
         <View className="items-center mb-10">
           <Image
             source={require('@/assets/images/logo.png')}
-            style={{ width: 180, height: 180, marginBottom: 16 }}
+            style={{ width: 260, height: 260, marginBottom: 16 }}
             resizeMode="contain"
           />
           <Text className="text-black dark:text-white text-3xl font-bold">Welcome to GitLane</Text>

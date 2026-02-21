@@ -1,3 +1,82 @@
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useState, useCallback, useMemo } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  Alert,
+  ActivityIndicator,
+  RefreshControl,
+  Image,
+} from 'react-native';
+import {
+  FileCode,
+  FileJson,
+  FileText,
+  Image as ImageIcon,
+  Code2,
+  Globe,
+  Braces,
+  Terminal,
+  File as FileIcon,
+  FolderGit2,
+  GitBranch,
+  Tag,
+  LayoutDashboard,
+  ChevronLeft,
+  ChevronDown,
+  ChevronRight,
+  Trash2,
+  Share2,
+  Check,
+  Plus,
+  History,
+  Circle,
+  Clock,
+  RefreshCw,
+  ArrowUpFromLine,
+  ArrowDownToLine,
+  Link2,
+  Github,
+  BarChart3,
+  ShieldCheck,
+  Search,
+  MessageCircle,
+} from 'lucide-react-native';
+import {
+  currentBranch,
+  listBranches,
+  getStatus,
+  getLog,
+  listTags,
+  checkout,
+  stageAll,
+  commitAll,
+  createBranch,
+  deleteBranch,
+  mergeBranch,
+  detectConflicts,
+  diffSummary,
+  rebase,
+  createTag,
+  deleteTag,
+  listFilesAtRef,
+  readFileAtRef,
+  addRemote,
+  listRemotes,
+  getRemoteUrl,
+  fetchRemote,
+  pullRemote,
+  pushRemote,
+} from '@/services/gitService';
+import { deleteRepo, getRepoSize } from '@/services/repoService';
+import { stash, stashPop } from '@/services/stashService';
+import { isOnline } from '@/services/networkService';
+import { enqueuePush, syncRepo } from '@/services/offlineSyncService';
+import { isGitHubLinked, createGitHubRepo, getCachedUsername, listCollaborators, addCollaborator } from '@/services/githubAuth';
+import SyntaxHighlighter from '@/components/SyntaxHighlighter';
 
 /* ───────────────── helpers ───────────────── */
 
@@ -78,17 +157,17 @@ function getExt(name: string) {
   return idx >= 0 ? name.slice(idx + 1).toLowerCase() : ''
 }
 
-import {
-  FileCode,
-  FileJson,
-  FileText,
-  Image as ImageIcon,
-  Code2,
-  Globe,
-  Braces,
-  Terminal,
-  File as FileIcon,
-} from 'lucide-react-native'
+// import {
+//   FileCode,
+//   FileJson,
+//   FileText,
+//   Image as ImageIcon,
+//   Code2,
+//   Globe,
+//   Braces,
+//   Terminal,
+//   File as FileIcon,
+// } from 'lucide-react-native'
 
 function getFileIcon(name: string) {
   const ext = getExt(name)
@@ -121,6 +200,8 @@ function getFileIcon(name: string) {
 }
 
 /* ═══════════════ COMPONENT ═══════════════ */
+
+
 
 export default function RepoDetailScreen() {
   const router = useRouter()
@@ -754,38 +835,67 @@ export default function RepoDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ── Branch selector row ── */}
-      <View className="flex-row items-center px-4 py-3 bg-white dark:bg-zinc-900 border-b border-neutral-200 dark:border-zinc-800">
-        <TouchableOpacity
-          className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800 "
-          onPress={() => setShowBranchPicker(!showBranchPicker)}
-        >
-          <GitBranch size={14} color="#58a6ff" className="mr-1.5" />
-          <Text className="text-black dark:text-neutral-100 text-sm font-semibold mr-1.5">
-            {branch}
-          </Text>
-          <ChevronDown size={14} color="#8b949e" />
-        </TouchableOpacity>
-        <View className="flex-row ml-4 gap-3 flex-1">
-          <Text className="text-neutral-500 text-xs font-medium">
-            {branches.length} branch{branches.length !== 1 ? 'es' : ''}
-          </Text>
-          <Text className="text-neutral-500 text-xs font-medium">
-            {tags.length} tag{tags.length !== 1 ? 's' : ''}
-          </Text>
+      {/* ── Branch selector & Actions ── */}
+      <View className="px-4 py-3 bg-white dark:bg-zinc-900 border-b border-neutral-200 dark:border-zinc-800">
+        <View className="flex-row items-center mb-3">
+          <TouchableOpacity
+            className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800 "
+            onPress={() => setShowBranchPicker(!showBranchPicker)}
+          >
+            <GitBranch size={14} color="#58a6ff" className="mr-1.5" />
+            <Text className="text-black dark:text-neutral-100 text-sm font-semibold mr-1.5">
+              {branch}
+            </Text>
+            <ChevronDown size={14} color="#8b949e" />
+          </TouchableOpacity>
+          <View className="flex-row ml-4 gap-3 flex-1">
+            <Text className="text-neutral-500 text-xs font-medium">
+              {branches.length} branch{branches.length !== 1 ? 'es' : ''}
+            </Text>
+            <Text className="text-neutral-500 text-xs font-medium">
+              {tags.length} tag{tags.length !== 1 ? 's' : ''}
+            </Text>
+          </View>
         </View>
-        <TouchableOpacity
-          className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800 "
-          onPress={() =>
-            router.push({
-              pathname: '/repo/[name]/graph' as any,
-              params: { name },
-            })
-          }
-        >
-          <Share2 size={14} color="#d2a8ff" className="mr-1.5" />
-          <Text className="text-[#d2a8ff] text-xs font-semibold">Graph</Text>
-        </TouchableOpacity>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 4 }}>
+          <TouchableOpacity
+            className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800 "
+            onPress={() =>
+              router.push({
+                pathname: '/repo/[name]/graph' as any,
+                params: { name },
+              })
+            }
+          >
+            <Share2 size={14} color="#d2a8ff" className="mr-1.5" />
+            <Text className="text-[#d2a8ff] text-xs font-semibold">Graph</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800"
+            onPress={() =>
+              router.push({
+                pathname: '/repo/[name]/analytics' as any,
+                params: { name },
+              })
+            }
+          >
+            <BarChart3 size={14} color="#58a6ff" className="mr-1.5" />
+            <Text className="text-[#58a6ff] text-xs font-semibold">Analytics</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800"
+            onPress={() =>
+              router.push({
+                pathname: '/repo/[name]/health' as any,
+                params: { name },
+              })
+            }
+          >
+            <ShieldCheck size={14} color="#3fb950" className="mr-1.5" />
+            <Text className="text-[#3fb950] text-xs font-semibold">Health</Text>
+          </TouchableOpacity>
+        </ScrollView>
       </View>
 
       {/* Branch picker dropdown */}

@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  SafeAreaView,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useFocusEffect } from 'expo-router'
@@ -147,8 +148,8 @@ export default function AnalyticsScreen() {
   /* ═══════════════ RENDER ═══════════════ */
 
   return (
-    <View className="flex-1 bg-neutral-100 dark:bg-black">
-      <View className="pt-14 pb-3 px-5 bg-white dark:bg-zinc-900 border-b border-neutral-200 dark:border-zinc-800">
+    <SafeAreaView className="flex-1 bg-neutral-100 dark:bg-black">
+      <View className="pt-4 pb-3 px-5 bg-white dark:bg-zinc-900 border-b border-neutral-200 dark:border-zinc-800">
         <View className="flex-row items-center gap-3">
           <TouchableOpacity onPress={() => router.back()} className="p-1">
             <ArrowLeft size={20} color="#8b949e" />
@@ -280,7 +281,7 @@ export default function AnalyticsScreen() {
           </>
         )}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   )
 }
 

@@ -20,6 +20,7 @@ import {
   BarcodeScanningResult,
 } from 'expo-camera'
 import { useFocusEffect } from 'expo-router'
+import { FolderGit2, ChevronDown, ChevronUp } from 'lucide-react-native'
 
 import { listRepos, getRepoPath } from '../services/repoService'
 import { initRepo, getLog } from '../services/gitService'
@@ -456,7 +457,7 @@ export default function TransferScreen() {
 
   return (
     <ScrollView
-      className="flex-1 bg-[#0d1117]"
+      className="flex-1 bg-[#000000]"
       contentContainerStyle={{ paddingBottom: 160 }}
     >
       {/* Header */}
@@ -464,7 +465,7 @@ export default function TransferScreen() {
         <Text className="text-[#e6edf3] text-xl font-bold">
           Transfer Repository
         </Text>
-        <Text className="text-[#484f58] text-sm mt-1">
+        <Text className="text-[#8b949e] text-sm mt-1">
           Export as .zip via any sharing channel, or import a .zip file
         </Text>
       </View>
@@ -484,14 +485,14 @@ export default function TransferScreen() {
           <TouchableOpacity
             className={`flex-row items-center justify-between px-3 py-2.5 mb-1.5 rounded-lg border ${
               selected === item.name
-                ? 'bg-[#1f6feb22] border-[#1f6feb]'
-                : 'bg-[#161b22] border-[#30363d]'
+                ? 'bg-[#1f6feb11] border-[#1f6feb33]'
+                : 'bg-[#0a0a0a] border-[#1a1a1a]'
             }`}
             onPress={() => setSelected(item.name)}
           >
             <View className="flex-row items-center gap-2">
-              <Text className="text-base">📁</Text>
-              <Text className="text-[#e6edf3] text-sm font-medium">
+              <FolderGit2 size={16} color={selected === item.name ? "#58a6ff" : "#8b949e"} />
+              <Text className={`text-sm font-medium ${selected === item.name ? 'text-[#58a6ff]' : 'text-[#e6edf3]'}`}>
                 {item.name}
               </Text>
             </View>
@@ -511,14 +512,14 @@ export default function TransferScreen() {
       <View className="px-4 mt-4 gap-3">
         <TouchableOpacity
           className={`py-3 rounded-lg items-center ${
-            selected && !busy ? 'bg-[#238636]' : 'bg-[#21262d]'
+            selected && !busy ? 'bg-[#58a6ff]' : 'bg-[#111111]'
           }`}
           onPress={handleExport}
           disabled={busy}
         >
           <Text
             className={`font-semibold text-base ${
-              selected && !busy ? 'text-white' : 'text-[#484f58]'
+              selected && !busy ? 'text-[#000000]' : 'text-[#484f58]'
             }`}
           >
             Export & Share .zip
@@ -528,15 +529,15 @@ export default function TransferScreen() {
         <TouchableOpacity
           className={`py-3 rounded-lg items-center border ${
             selected && !busy
-              ? 'bg-[#21262d] border-[#30363d]'
-              : 'bg-[#161b22] border-[#30363d]'
+              ? 'bg-[#0a0a0a] border-[#d2a8ff55]'
+              : 'bg-[#0a0a0a] border-[#1a1a1a]'
           }`}
           onPress={handleExportQR}
           disabled={busy || !selected}
         >
           <Text
             className={`font-semibold text-base ${
-              selected && !busy ? 'text-[#f2e85c]' : 'text-[#484f58]'
+              selected && !busy ? 'text-[#d2a8ff]' : 'text-[#484f58]'
             }`}
           >
             Generate QR
@@ -544,11 +545,11 @@ export default function TransferScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          className="py-3 rounded-lg items-center border bg-[#161b22] border-[#30363d]"
+          className="py-3 rounded-lg items-center border bg-[#0a0a0a] border-[#1a1a1a]"
           onPress={openScanner}
           disabled={busy}
         >
-          <Text className="font-semibold text-base text-[#a6ff58]">
+          <Text className="font-semibold text-base text-[#7ee787]">
             Scan QR
           </Text>
         </TouchableOpacity>
@@ -556,8 +557,8 @@ export default function TransferScreen() {
         <TouchableOpacity
           className={`py-3 rounded-lg items-center border ${
             busy
-              ? 'bg-[#21262d] border-[#30363d]'
-              : 'bg-[#161b22] border-[#30363d]'
+              ? 'bg-[#111111] border-[#1a1a1a]'
+              : 'bg-[#0a0a0a] border-[#1a1a1a]'
           }`}
           onPress={handleImport}
           disabled={busy}
@@ -588,10 +589,12 @@ export default function TransferScreen() {
         >
           <View
             style={{
-              backgroundColor: '#161b22',
+              backgroundColor: '#0a0a0a',
               padding: 24,
               borderRadius: 16,
               alignItems: 'center',
+              borderWidth: 1,
+              borderColor: '#1a1a1a',
               maxWidth: 340,
             }}
           >
@@ -619,7 +622,7 @@ export default function TransferScreen() {
               <QRCode
                 value={qrChunks[qrPage]}
                 size={220}
-                backgroundColor="#161b22"
+                backgroundColor="#0a0a0a"
                 color="#58a6ff"
               />
             )}
@@ -637,7 +640,7 @@ export default function TransferScreen() {
                   style={{
                     paddingVertical: 6,
                     paddingHorizontal: 18,
-                    backgroundColor: qrPage > 0 ? '#30363d' : '#21262d',
+                    backgroundColor: qrPage > 0 ? '#1a1a1a' : '#111111',
                     borderRadius: 8,
                   }}
                   disabled={qrPage === 0}
@@ -657,7 +660,7 @@ export default function TransferScreen() {
                     paddingVertical: 6,
                     paddingHorizontal: 18,
                     backgroundColor:
-                      qrPage < qrChunks.length - 1 ? '#30363d' : '#21262d',
+                      qrPage < qrChunks.length - 1 ? '#1a1a1a' : '#111111',
                     borderRadius: 8,
                   }}
                   disabled={qrPage >= qrChunks.length - 1}
@@ -692,7 +695,7 @@ export default function TransferScreen() {
                 marginTop: 18,
                 paddingVertical: 8,
                 paddingHorizontal: 24,
-                backgroundColor: '#30363d',
+                backgroundColor: '#1a1a1a',
                 borderRadius: 8,
               }}
               onPress={() => setQrVisible(false)}
@@ -722,9 +725,11 @@ export default function TransferScreen() {
         >
           <View
             style={{
-              backgroundColor: '#161b22',
+              backgroundColor: '#0a0a0a',
               padding: 16,
               borderRadius: 16,
+              borderWidth: 1,
+              borderColor: '#1a1a1a',
               alignItems: 'center',
               maxWidth: 340,
             }}
@@ -781,7 +786,7 @@ export default function TransferScreen() {
               style={{
                 paddingVertical: 8,
                 paddingHorizontal: 24,
-                backgroundColor: '#30363d',
+                backgroundColor: '#1a1a1a',
                 borderRadius: 8,
               }}
               onPress={() => setScannerVisible(false)}
@@ -819,11 +824,11 @@ export default function TransferScreen() {
               Export only changes since a specific commit
             </Text>
           </View>
-          <Text className="text-[#8b949e]">{showPatchSync ? '▲' : '▼'}</Text>
+          {showPatchSync ? <ChevronUp size={16} color="#8b949e" /> : <ChevronDown size={16} color="#8b949e" />}
         </TouchableOpacity>
 
         {showPatchSync && (
-          <View className="mt-2 rounded-lg bg-[#161b22] border border-[#30363d] overflow-hidden">
+          <View className="mt-2 rounded-lg bg-[#0a0a0a] border border-[#1a1a1a] overflow-hidden">
             {!selected ? (
               <View className="px-3 py-4 items-center">
                 <Text className="text-[#484f58] text-sm">
@@ -840,7 +845,7 @@ export default function TransferScreen() {
               </View>
             ) : (
               <>
-                <View className="px-3 py-2 bg-[#21262d] border-b border-[#30363d]">
+                <View className="px-3 py-2 bg-[#111111] border-b border-[#1a1a1a]">
                   <Text className="text-[#8b949e] text-xs">
                     Select the base commit (changes after this will be exported)
                   </Text>
@@ -849,8 +854,8 @@ export default function TransferScreen() {
                   {patchCommits.map((c) => (
                     <TouchableOpacity
                       key={c.oid}
-                      className={`px-3 py-2.5 border-b border-[#21262d] flex-row items-center ${
-                        selectedCommit === c.oid ? 'bg-[#1f6feb22]' : ''
+                      className={`px-3 py-2.5 border-b border-[#111111] flex-row items-center ${
+                        selectedCommit === c.oid ? 'bg-[#1f6feb15]' : ''
                       }`}
                       onPress={() => setSelectedCommit(c.oid)}
                     >
@@ -858,7 +863,7 @@ export default function TransferScreen() {
                         className="w-4 h-4 rounded-full border mr-2 items-center justify-center"
                         style={{
                           borderColor:
-                            selectedCommit === c.oid ? '#58a6ff' : '#30363d',
+                            selectedCommit === c.oid ? '#58a6ff' : '#1a1a1a',
                           backgroundColor:
                             selectedCommit === c.oid
                               ? '#1f6feb'
@@ -888,17 +893,17 @@ export default function TransferScreen() {
                 </ScrollView>
                 <TouchableOpacity
                   className={`mx-3 my-2 py-2 rounded-lg items-center ${
-                    selectedCommit && !busy ? 'bg-[#238636]' : 'bg-[#21262d]'
+                    selectedCommit && !busy ? 'bg-[#58a6ff]' : 'bg-[#111111]'
                   }`}
                   onPress={handlePatchExport}
                   disabled={busy || !selectedCommit}
                 >
                   <Text
                     className={`font-semibold text-sm ${
-                      selectedCommit && !busy ? 'text-white' : 'text-[#484f58]'
+                      selectedCommit && !busy ? 'text-[#000000]' : 'text-[#484f58]'
                     }`}
                   >
-                    📤 Export Patch
+                    Export Patch
                   </Text>
                 </TouchableOpacity>
               </>
