@@ -30,9 +30,11 @@ import {
   readFileAtRef,
   diffSummary,
   detectConflicts,
+  rebase,
 } from '@/services/gitService'
 import { stash, stashPop } from '@/services/stashService'
 import { deleteRepo, getRepoSize } from '@/services/repoService'
+import SyntaxHighlighter from '@/components/SyntaxHighlighter'
 
 /* ───────────────── helpers ───────────────── */
 
@@ -413,6 +415,35 @@ export default function RepoDetailScreen() {
     [name, branch],
   )
 
+  const handleRebase = useCallback(
+    (ontoBranch: string) => {
+      if (!name) return
+      Alert.alert(
+        'Rebase',
+        `Rebase "${branch}" onto "${ontoBranch}"? This replays your commits on top of "${ontoBranch}".`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Rebase',
+            onPress: async () => {
+              try {
+                const result = await rebase(name, ontoBranch)
+                Alert.alert(
+                  'Rebase complete',
+                  `${result.replayedCommits} commit${result.replayedCommits !== 1 ? 's' : ''} replayed`,
+                )
+                await loadRepoData()
+              } catch (err: any) {
+                Alert.alert('Rebase failed', err?.message ?? '')
+              }
+            },
+          },
+        ],
+      )
+    },
+    [name, branch, loadRepoData],
+  )
+
   const handleCreateTag = useCallback(async () => {
     if (!name || !newTagName.trim()) return
     try {
@@ -712,19 +743,15 @@ export default function RepoDetailScreen() {
                       </Text>
                       <Text className="text-[#8b949e] text-xs">{branch}</Text>
                     </View>
-                    {/* Code lines */}
+                    {/* Code lines with syntax highlighting */}
                     <ScrollView horizontal>
                       <View className="p-3">
-                        {fileContent.split('\n').map((line, idx) => (
-                          <View key={idx} className="flex-row">
-                            <Text className="text-[#484f58] text-[11px] w-8 text-right mr-3 font-mono">
-                              {idx + 1}
-                            </Text>
-                            <Text className="text-[#e6edf3] text-[11px] font-mono">
-                              {line || ' '}
-                            </Text>
-                          </View>
-                        ))}
+                        <SyntaxHighlighter
+                          code={fileContent}
+                          filename={viewingFile}
+                          showLineNumbers
+                          fontSize={11}
+                        />
                       </View>
                     </ScrollView>
                   </View>
@@ -950,6 +977,12 @@ export default function RepoDetailScreen() {
                           <Text className="text-[#58a6ff] text-xs">
                             Compare
                           </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          className="px-2.5 py-1 rounded bg-[#21262d] border border-[#30363d]"
+                          onPress={() => handleRebase(b)}
+                        >
+                          <Text className="text-[#d2a8ff] text-xs">Rebase</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           className="px-2.5 py-1 rounded bg-[#21262d] border border-[#30363d]"

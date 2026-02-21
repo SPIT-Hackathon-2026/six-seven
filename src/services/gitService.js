@@ -570,6 +570,178 @@ export async function resetHard(repoName, oid) {
 }
 
 // =====================================================================
+//  CHERRY-PICK / REBASE
+// =====================================================================
+
+/**
+ * Cherry-pick: apply the changes from a single commit onto the current HEAD.
+ * Reads the diff between the commit and its parent, then applies those changes.
+ */
+export async function cherryPick(repoName, commitOid) {
+  const dir = getRepoPath(repoName)
+
+  const { commit: commitObj } = await git.readCommit({
+    fs,
+    dir,
+    oid: commitOid,
+  })
+  const parentOid = commitObj.parent[0] // first parent
+  if (!parentOid) throw new Error('Cannot cherry-pick a root commit')
+
+  const parentTree = await readTreeFlat(dir, parentOid)
+  const commitTree = await readTreeFlat(dir, commitOid)
+
+  // Find changes in this commit vs its parent
+  const allFiles = new Set([
+    ...Object.keys(parentTree),
+    ...Object.keys(commitTree),
+  ])
+
+  for (const filepath of allFiles) {
+    const oldOid = parentTree[filepath] ?? null
+    const newOid = commitTree[filepath] ?? null
+
+    if (oldOid === newOid) continue // unchanged
+
+    if (newOid === null) {
+      // File deleted in this commit
+      const fullPath = `${dir}/${filepath}`
+      try {
+        await fs.promises.unlink(fullPath)
+      } catch {
+        /* already gone */
+      }
+      try {
+        await git.remove({ fs, dir, filepath })
+      } catch {
+        /* ok */
+      }
+    } else {
+      // File added or modified – write the new content
+      const { blob } = await git.readBlob({ fs, dir, oid: newOid })
+      const content = new TextDecoder().decode(blob)
+      const fullPath = `${dir}/${filepath}`
+      const parentDir = fullPath.substring(0, fullPath.lastIndexOf('/'))
+      try {
+        await fs.promises.mkdir(parentDir, { recursive: true })
+      } catch {
+        /* exists */
+      }
+      await fs.promises.writeFile(fullPath, content, 'utf8')
+      await git.add({ fs, dir, filepath })
+    }
+  }
+
+  // Create the new commit with the original message
+  const sha = await git.commit({
+    fs,
+    dir,
+    message: commitObj.message,
+    author: _author,
+    committer: _author,
+  })
+
+  return sha
+}
+
+/**
+ * Rebase current branch onto a target branch.
+ * Replays commits from the current branch that are not in the target.
+ *
+ * Steps:
+ * 1. Find merge base between current and target
+ * 2. Collect commits on current branch since merge base
+ * 3. Reset current branch to target's HEAD
+ * 4. Cherry-pick each commit in order
+ *
+ * Returns { success, replayedCommits, newHead }
+ */
+export async function rebase(repoName, ontoBranch) {
+  const dir = getRepoPath(repoName)
+  const ourBranch = await currentBranch(repoName)
+
+  if (!ourBranch) throw new Error('Cannot rebase in detached HEAD state')
+  if (ourBranch === ontoBranch)
+    throw new Error('Cannot rebase onto the same branch')
+
+  const ourHead = await git.resolveRef({ fs, dir, ref: ourBranch })
+  const theirHead = await git.resolveRef({ fs, dir, ref: ontoBranch })
+
+  // Find merge base
+  const [baseOid] = await git.findMergeBase({
+    fs,
+    dir,
+    oids: [ourHead, theirHead],
+  })
+  if (!baseOid) throw new Error('No common ancestor found')
+
+  // Collect our commits since the merge base (oldest first)
+  const allLog = await git.log({ fs, dir, ref: ourBranch, depth: 500 })
+  const toReplay = []
+  for (const entry of allLog) {
+    if (entry.oid === baseOid) break
+    toReplay.push(entry)
+  }
+  toReplay.reverse() // oldest first
+
+  if (toReplay.length === 0) {
+    // Already up to date – just fast-forward
+    await fs.promises.writeFile(
+      `${dir}/.git/refs/heads/${ourBranch}`,
+      theirHead + '\n',
+      'utf8',
+    )
+    await git.checkout({ fs, dir, ref: ourBranch, force: true })
+    return { success: true, replayedCommits: 0, newHead: theirHead }
+  }
+
+  // Reset our branch to target's HEAD
+  await fs.promises.writeFile(
+    `${dir}/.git/refs/heads/${ourBranch}`,
+    theirHead + '\n',
+    'utf8',
+  )
+  await git.checkout({ fs, dir, ref: ourBranch, force: true })
+
+  // Cherry-pick each commit
+  let newHead = theirHead
+  const replayed = []
+  for (const entry of toReplay) {
+    try {
+      newHead = await cherryPick(repoName, entry.oid)
+      replayed.push({
+        oldOid: entry.oid,
+        newOid: newHead,
+        message: entry.commit.message,
+      })
+    } catch (err) {
+      // On failure, record what we managed and report
+      await appendReflog(repoName, {
+        action: 'rebase',
+        message: `rebase ${ourBranch} onto ${ontoBranch} (partial: ${replayed.length}/${toReplay.length})`,
+        from: ourHead,
+        to: newHead,
+        branch: ourBranch,
+      })
+      throw new Error(
+        `Rebase stopped at "${entry.commit.message.trim()}" (${entry.oid.slice(0, 7)}): ${err.message}. ` +
+          `${replayed.length} of ${toReplay.length} commits replayed.`,
+      )
+    }
+  }
+
+  await appendReflog(repoName, {
+    action: 'rebase',
+    message: `rebase ${ourBranch} onto ${ontoBranch}`,
+    from: ourHead,
+    to: newHead,
+    branch: ourBranch,
+  })
+
+  return { success: true, replayedCommits: replayed.length, newHead }
+}
+
+// =====================================================================
 //  READ BLOB / TREE helpers (for code exploration)
 // =====================================================================
 

@@ -21,7 +21,15 @@ import {
   currentBranch,
   diffFile,
 } from '@/services/gitService'
-import { stash, stashList, stashPop } from '@/services/stashService'
+import {
+  stash,
+  stashList,
+  stashPop,
+  stashApply,
+  stashDrop,
+  stashClear,
+  stashShow,
+} from '@/services/stashService'
 
 type FileEntry = { filepath: string; status: string; staged: boolean }
 
@@ -58,6 +66,24 @@ export default function SourceControlScreen() {
   const [showRepoPicker, setShowRepoPicker] = useState(false)
   const [diffText, setDiffText] = useState<string | null>(null)
   const [diffFile_, setDiffFile_] = useState<string | null>(null)
+  const [showStashList, setShowStashList] = useState(false)
+  const [stashes, setStashes] = useState<any[]>([])
+  const [loadingStashes, setLoadingStashes] = useState(false)
+  const [expandedStash, setExpandedStash] = useState<number | null>(null)
+  const [stashFiles, setStashFiles] = useState<any[]>([])
+
+  const refreshStashList = useCallback(async () => {
+    if (!selectedRepo) return
+    setLoadingStashes(true)
+    try {
+      const list = await stashList(selectedRepo)
+      setStashes(list)
+    } catch {
+      setStashes([])
+    } finally {
+      setLoadingStashes(false)
+    }
+  }, [selectedRepo])
 
   // Load repo list on focus
   useFocusEffect(
@@ -177,10 +203,85 @@ export default function SourceControlScreen() {
       await stashPop(selectedRepo)
       Alert.alert('Stash applied', 'Last stash restored and removed')
       await refreshStatus()
+      refreshStashList()
     } catch (err: any) {
       Alert.alert('Stash pop failed', err?.message ?? '')
     }
-  }, [selectedRepo, refreshStatus])
+  }, [selectedRepo, refreshStatus, refreshStashList])
+
+  const handleStashApply = useCallback(
+    async (index: number) => {
+      if (!selectedRepo) return
+      try {
+        await stashApply(selectedRepo, index)
+        Alert.alert('Applied', `Stash @{${index}} applied (kept in list)`)
+        await refreshStatus()
+      } catch (err: any) {
+        Alert.alert('Apply failed', err?.message ?? '')
+      }
+    },
+    [selectedRepo, refreshStatus],
+  )
+
+  const handleStashDrop = useCallback(
+    async (index: number) => {
+      if (!selectedRepo) return
+      Alert.alert('Drop stash', `Drop stash @{${index}}?`, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Drop',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await stashDrop(selectedRepo, index)
+              refreshStashList()
+            } catch (err: any) {
+              Alert.alert('Error', err?.message ?? '')
+            }
+          },
+        },
+      ])
+    },
+    [selectedRepo, refreshStashList],
+  )
+
+  const handleStashClear = useCallback(() => {
+    if (!selectedRepo) return
+    Alert.alert('Clear all stashes', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clear',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await stashClear(selectedRepo)
+            setStashes([])
+          } catch (err: any) {
+            Alert.alert('Error', err?.message ?? '')
+          }
+        },
+      },
+    ])
+  }, [selectedRepo])
+
+  const handleExpandStash = useCallback(
+    async (index: number) => {
+      if (expandedStash === index) {
+        setExpandedStash(null)
+        setStashFiles([])
+        return
+      }
+      setExpandedStash(index)
+      if (!selectedRepo) return
+      try {
+        const files = await stashShow(selectedRepo, index)
+        setStashFiles(files)
+      } catch {
+        setStashFiles([])
+      }
+    },
+    [expandedStash, selectedRepo],
+  )
 
   const handleViewDiff = useCallback(
     async (filepath: string) => {
@@ -288,6 +389,15 @@ export default function SourceControlScreen() {
         <Text className="text-[#e6edf3] text-lg font-bold">Source Control</Text>
         <View className="flex-row gap-2">
           <TouchableOpacity
+            onPress={() => {
+              setShowStashList(!showStashList)
+              if (!showStashList) refreshStashList()
+            }}
+            className="px-3 py-1 rounded-md bg-[#21262d]"
+          >
+            <Text className="text-[#d2a8ff] text-xs">📦 Stashes</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             onPress={handleStash}
             className="px-3 py-1 rounded-md bg-[#21262d]"
           >
@@ -301,6 +411,128 @@ export default function SourceControlScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Stash management panel */}
+      {showStashList && selectedRepo && (
+        <View className="mx-5 mt-2 rounded-lg bg-[#161b22] border border-[#30363d] overflow-hidden">
+          <View className="flex-row items-center justify-between px-3 py-2 bg-[#21262d] border-b border-[#30363d]">
+            <Text className="text-[#e6edf3] text-sm font-semibold">
+              Stash List ({stashes.length})
+            </Text>
+            <View className="flex-row gap-2">
+              {stashes.length > 0 && (
+                <TouchableOpacity onPress={handleStashClear}>
+                  <Text className="text-[#f85149] text-xs">Clear All</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={() => setShowStashList(false)}>
+                <Text className="text-[#8b949e] text-sm">✕</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          {loadingStashes ? (
+            <View className="py-4 items-center">
+              <ActivityIndicator color="#58a6ff" size="small" />
+            </View>
+          ) : stashes.length === 0 ? (
+            <View className="px-3 py-4 items-center">
+              <Text className="text-[#484f58] text-sm">No stashes</Text>
+            </View>
+          ) : (
+            <ScrollView style={{ maxHeight: 300 }}>
+              {stashes.map((s) => (
+                <View key={s.index} className="border-b border-[#21262d]">
+                  <TouchableOpacity
+                    className="px-3 py-2.5"
+                    onPress={() => handleExpandStash(s.index)}
+                  >
+                    <View className="flex-row items-center justify-between">
+                      <View className="flex-1">
+                        <Text
+                          className="text-[#e6edf3] text-sm"
+                          numberOfLines={1}
+                        >
+                          stash@{'{' + s.index + '}'}: {s.message}
+                        </Text>
+                        <View className="flex-row items-center gap-2 mt-0.5">
+                          <Text className="text-[#8b949e] text-xs">
+                            {s.fileCount} file{s.fileCount !== 1 ? 's' : ''}
+                          </Text>
+                          <Text className="text-[#484f58] text-xs">·</Text>
+                          <Text className="text-[#8b949e] text-xs">
+                            {new Date(s.timestamp).toLocaleString()}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    {/* Action buttons */}
+                    <View className="flex-row gap-2 mt-2">
+                      <TouchableOpacity
+                        className="px-2.5 py-1 rounded bg-[#238636]"
+                        onPress={() => handleStashApply(s.index)}
+                      >
+                        <Text className="text-white text-xs">Apply</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        className="px-2.5 py-1 rounded bg-[#1f6feb]"
+                        onPress={async () => {
+                          try {
+                            await stashPop(selectedRepo!, s.index)
+                            Alert.alert(
+                              'Popped',
+                              `Stash @{${s.index}} applied & removed`,
+                            )
+                            refreshStashList()
+                            refreshStatus()
+                          } catch (err: any) {
+                            Alert.alert('Error', err?.message ?? '')
+                          }
+                        }}
+                      >
+                        <Text className="text-white text-xs">Pop</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        className="px-2.5 py-1 rounded bg-[#21262d] border border-[#30363d]"
+                        onPress={() => handleStashDrop(s.index)}
+                      >
+                        <Text className="text-[#f85149] text-xs">Drop</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Expanded file list */}
+                    {expandedStash === s.index && stashFiles.length > 0 && (
+                      <View className="mt-2 pt-2 border-t border-[#21262d]">
+                        {stashFiles.map((f: any) => (
+                          <View
+                            key={f.filepath}
+                            className="flex-row items-center py-0.5"
+                          >
+                            <Text
+                              className="text-xs font-bold w-4 mr-1"
+                              style={{
+                                color: f.deleted ? '#f85149' : '#7ee787',
+                              }}
+                            >
+                              {f.deleted ? 'D' : 'M'}
+                            </Text>
+                            <Text
+                              className="text-[#c9d1d9] text-xs flex-1"
+                              numberOfLines={1}
+                            >
+                              {f.filepath}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+      )}
 
       {/* Repo picker */}
       <TouchableOpacity
