@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { ArrowLeft, Send } from 'lucide-react-native'
+import { ArrowLeft, Send, Trash2 } from 'lucide-react-native'
 import { io, Socket } from 'socket.io-client'
 
 import Constants from 'expo-constants'
@@ -28,6 +28,7 @@ type Message = {
   author_name: string
   text: string
   created_at: string
+  client_id?: string
 }
 
 export default function RepoChatScreen() {
@@ -42,6 +43,9 @@ export default function RepoChatScreen() {
   const socketRef = useRef<Socket | null>(null)
   const scrollViewRef = useRef<ScrollView>(null)
   const authorName = getAuthor().name || 'Anonymous'
+  
+  // Unique persistent installation ID per device
+  const myClientId = Constants.installationId || Constants.sessionId
 
   useEffect(() => {
     if (!name) return
@@ -77,6 +81,10 @@ export default function RepoChatScreen() {
       setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100)
     })
 
+    socket.on('chat_cleared', () => {
+      setMessages([])
+    })
+
     return () => {
       socket.disconnect()
     }
@@ -93,8 +101,15 @@ export default function RepoChatScreen() {
       repoId: name,
       authorName,
       text,
+      clientId: myClientId,
     })
-  }, [inputText, name, authorName, connected])
+  }, [inputText, name, authorName, connected, myClientId])
+
+  const handleClearChat = useCallback(() => {
+    if (!name || !connected) return
+    fetch(`${BACKEND_URL}/api/chat/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      .catch((err) => console.warn('Failed to clear chat:', err))
+  }, [name, connected])
 
   // Scroll to bottom initially
   useEffect(() => {
@@ -124,8 +139,13 @@ export default function RepoChatScreen() {
               </Text>
             </View>
           </View>
-          {/* Connection Status Indicator */}
-          <View className={`w-2 h-2 rounded-full ${connected ? 'bg-[#3fb950]' : 'bg-[#f85149]'}`} />
+          <View className="flex-row items-center gap-4">
+            <TouchableOpacity onPress={handleClearChat} className="p-1">
+              <Trash2 size={18} color="#f85149" />
+            </TouchableOpacity>
+            {/* Connection Status Indicator */}
+            <View className={`w-2 h-2 rounded-full ${connected ? 'bg-[#3fb950]' : 'bg-[#f85149]'}`} />
+          </View>
         </View>
       </View>
 
@@ -147,14 +167,24 @@ export default function RepoChatScreen() {
             </View>
           ) : (
             messages.map((msg, idx) => {
-              const isMe = msg.author_name === authorName
-              const showName = !isMe && (idx === 0 || messages[idx - 1].author_name !== msg.author_name)
+              // Now we match on our unique device sessionId, falling back to name if missing (older msgs)
+              const isMe = msg.client_id ? msg.client_id === myClientId : msg.author_name === authorName
+
+              // Show name if it's not the user, AND if the previous message was from a DIFFERENT client ID (or if old message, different author name)
+              const isDifferentSender = idx === 0 || 
+                ((msg.client_id && messages[idx - 1].client_id) 
+                  ? messages[idx - 1].client_id !== msg.client_id 
+                  : messages[idx - 1].author_name !== msg.author_name)
+              
+              const showName = isDifferentSender
               
               return (
                 <View key={msg.id} className={`mb-3 flex-row ${isMe ? 'justify-end' : 'justify-start'}`}>
                   <View className="max-w-[80%]">
                     {showName && (
-                      <Text className="text-neutral-500 text-[10px] uppercase font-bold tracking-wider mb-1 ml-1">
+                      <Text 
+                        className={`text-neutral-500 text-[10px] uppercase font-bold tracking-wider mb-1 ${isMe ? 'text-right mr-1' : 'ml-1'}`}
+                      >
                         {msg.author_name}
                       </Text>
                     )}

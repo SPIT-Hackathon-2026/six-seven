@@ -29,8 +29,10 @@ const initDb = async () => {
       repo_id VARCHAR(255) NOT NULL,
       author_name VARCHAR(255) NOT NULL,
       text TEXT NOT NULL,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      client_id VARCHAR(255)
     );
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS client_id VARCHAR(255);
     CREATE INDEX IF NOT EXISTS idx_messages_repo_id ON messages(repo_id);
   `;
   try {
@@ -57,6 +59,19 @@ app.get('/api/chat/:repoId', async (req, res) => {
   }
 });
 
+// REST Route: Clear message history for a repository
+app.delete('/api/chat/:repoId', async (req, res) => {
+  const { repoId } = req.params;
+  try {
+    await pool.query('DELETE FROM messages WHERE repo_id = $1', [repoId]);
+    io.to(repoId).emit('chat_cleared');
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error clearing messages:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // WebSocket Server
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
@@ -69,13 +84,13 @@ io.on('connection', (socket) => {
 
   // Client sends a message
   socket.on('send_message', async (data) => {
-    const { repoId, authorName, text } = data;
+    const { repoId, authorName, text, clientId } = data;
     
     // Save to DB
     try {
       const result = await pool.query(
-        'INSERT INTO messages (repo_id, author_name, text) VALUES ($1, $2, $3) RETURNING *',
-        [repoId, authorName, text]
+        'INSERT INTO messages (repo_id, author_name, text, client_id) VALUES ($1, $2, $3, $4) RETURNING *',
+        [repoId, authorName, text, clientId || null]
       );
       const savedMessage = result.rows[0];
       
