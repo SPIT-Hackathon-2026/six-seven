@@ -1,72 +1,3 @@
-import { useCallback, useState, useMemo } from 'react'
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-  ActivityIndicator,
-  TextInput,
-  RefreshControl,
-} from 'react-native'
-import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
-import {
-  FolderGit2,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
-  Check,
-  Trash2,
-  GitBranch,
-  Share2,
-  Tag,
-  LayoutDashboard,
-  History,
-  Plus,
-  CircleSlash2,
-  Circle,
-  Clock,
-  ArrowUpFromLine,
-  ArrowDownToLine,
-  RefreshCw,
-  Link2,
-  Github,
-} from 'lucide-react-native'
-
-import {
-  currentBranch,
-  getStatus,
-  listBranches,
-  commitAll,
-  stageAll,
-  createBranch,
-  deleteBranch,
-  checkout,
-  getLog,
-  listTags,
-  createTag,
-  deleteTag,
-  mergeBranch,
-  diffFile,
-  listFilesAtRef,
-  readFileAtRef,
-  diffSummary,
-  detectConflicts,
-  rebase,
-  pushRemote,
-  pullRemote,
-  fetchRemote,
-  addRemote,
-  getRemoteUrl,
-  listRemotes,
-  getRemoteDivergence,
-} from '@/services/gitService'
-import { isGitHubLinked } from '@/services/githubAuth'
-import { stash, stashPop } from '@/services/stashService'
-import { deleteRepo, getRepoSize } from '@/services/repoService'
-import { isOnline } from '@/services/networkService'
-import { syncRepo, enqueuePush, getPendingCount, getLastSyncInfo } from '@/services/offlineSyncService'
-import SyntaxHighlighter from '@/components/SyntaxHighlighter'
 
 /* ───────────────── helpers ───────────────── */
 
@@ -181,8 +112,7 @@ function getFileIcon(name: string) {
     case 'png':
     case 'jpg':
     case 'jpeg':
-    case 'gif':
-      return <ImageIcon size={16} color="#8b949e" />
+    case 'gif':      return <ImageIcon size={16} color="#8b949e" />
     case 'xml':
       return <FileCode size={16} color="#8b949e" />
     default:
