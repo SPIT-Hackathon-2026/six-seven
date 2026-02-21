@@ -501,6 +501,20 @@ export default function ConflictResolutionScreen() {
                 </View>
               </View>
 
+              {/* Unified diff view */}
+              <View className="mt-4 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden">
+                <View className="px-4 py-2 bg-neutral-100 dark:bg-black border-b border-neutral-200 dark:border-zinc-800">
+                  <Text className="text-neutral-700 dark:text-neutral-300 text-[11px] font-bold uppercase tracking-wider">
+                    📋 Unified Diff
+                  </Text>
+                </View>
+                <ScrollView style={{ maxHeight: 250 }} nestedScrollEnabled horizontal showsHorizontalScrollIndicator={false}>
+                  <View className="bg-neutral-50 dark:bg-black min-w-full">
+                    {renderUnifiedDiff(current.filepath, current.ours, current.theirs)}
+                  </View>
+                </ScrollView>
+              </View>
+
               {/* Base version (collapsible) */}
               {current.base && (
                 <View className="mt-4 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden ">
@@ -573,4 +587,79 @@ export default function ConflictResolutionScreen() {
       )}
     </View>
   )
+}
+
+/* ─── Unified Diff Renderer ─── */
+function renderUnifiedDiff(filepath: string, ours: string | null, theirs: string | null) {
+  const oursLines = (ours ?? '').split('\n')
+  const theirsLines = (theirs ?? '').split('\n')
+  const rows: React.ReactElement[] = []
+
+  // Header
+  rows.push(
+    <View key="header-a" className="px-3 py-1 bg-blue-50 dark:bg-blue-950 border-b border-blue-100 dark:border-blue-900">
+      <Text className="text-blue-700 dark:text-blue-300 text-xs font-mono">
+        --- a/{filepath}
+      </Text>
+    </View>
+  )
+  rows.push(
+    <View key="header-b" className="px-3 py-1 bg-green-50 dark:bg-green-950 border-b border-green-100 dark:border-green-900">
+      <Text className="text-green-700 dark:text-green-300 text-xs font-mono">
+        +++ b/{filepath}
+      </Text>
+    </View>
+  )
+
+  // Compare lines
+  const maxLen = Math.max(oursLines.length, theirsLines.length)
+  for (let i = 0; i < maxLen; i++) {
+    const ourLine = oursLines[i]
+    const theirLine = theirsLines[i]
+
+    if (ourLine === theirLine) {
+      // Unchanged line
+      rows.push(
+        <View key={`${i}-equal`} className="flex-row items-center px-3 py-0.5">
+          <Text className="text-neutral-400 dark:text-neutral-600 text-[9px] w-6 text-right mr-2 font-mono">
+            {i + 1}
+          </Text>
+          <Text className="text-neutral-600 dark:text-neutral-400 text-xs font-mono flex-1">
+            {' '}
+            {ourLine || ''}
+          </Text>
+        </View>
+      )
+    } else {
+      // Our version (removed)
+      if (ourLine !== undefined) {
+        rows.push(
+          <View key={`${i}-our`} className="flex-row items-center px-3 py-0.5 bg-red-50 dark:bg-red-950/30">
+            <Text className="text-red-500 dark:text-red-400 text-[9px] w-6 text-right mr-2 font-mono opacity-80">
+              {i + 1}
+            </Text>
+            <Text className="text-red-700 dark:text-red-300 text-xs font-mono flex-1">
+              -{ourLine}
+            </Text>
+          </View>
+        )
+      }
+
+      // Their version (added)
+      if (theirLine !== undefined) {
+        rows.push(
+          <View key={`${i}-their`} className="flex-row items-center px-3 py-0.5 bg-green-50 dark:bg-green-950/30">
+            <Text className="text-green-500 dark:text-green-400 text-[9px] w-6 text-right mr-2 font-mono opacity-80">
+              {i + 1}
+            </Text>
+            <Text className="text-green-700 dark:text-green-300 text-xs font-mono flex-1">
+              +{theirLine}
+            </Text>
+          </View>
+        )
+      }
+    }
+  }
+
+  return <>{rows}</>
 }
