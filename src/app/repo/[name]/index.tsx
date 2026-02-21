@@ -341,60 +341,56 @@ export default function RepoDetailScreen() {
   const handleMerge = useCallback(
     (theirBranch: string) => {
       if (!name) return
-      Alert.alert(
-        'Merge Branch',
-        `Merge "${theirBranch}" into "${branch}"?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Merge',
-            onPress: async () => {
-              setMerging(true)
+      Alert.alert('Merge Branch', `Merge "${theirBranch}" into "${branch}"?`, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Merge',
+          onPress: async () => {
+            setMerging(true)
+            try {
+              const result = await mergeBranch(name, theirBranch)
+              if (result.conflicts && result.conflicts.length > 0) {
+                // Navigate to conflict resolution screen
+                router.push({
+                  pathname: '/repo/[name]/conflicts' as any,
+                  params: {
+                    name,
+                    theirBranch,
+                    conflicts: JSON.stringify(result.conflicts),
+                  },
+                })
+              } else {
+                Alert.alert(
+                  'Merged',
+                  result?.oid
+                    ? `New commit: ${result.oid.slice(0, 7)}`
+                    : 'Already up to date',
+                )
+                await loadRepoData()
+              }
+            } catch (err: any) {
+              // Try to detect conflicts even on error
               try {
-                const result = await mergeBranch(name, theirBranch)
-                if (result.conflicts && result.conflicts.length > 0) {
-                  // Navigate to conflict resolution screen
+                const conflicts = await detectConflicts(name, theirBranch)
+                if (conflicts.length > 0) {
                   router.push({
                     pathname: '/repo/[name]/conflicts' as any,
                     params: {
                       name,
                       theirBranch,
-                      conflicts: JSON.stringify(result.conflicts),
+                      conflicts: JSON.stringify(conflicts),
                     },
                   })
-                } else {
-                  Alert.alert(
-                    'Merged',
-                    result?.oid
-                      ? `New commit: ${result.oid.slice(0, 7)}`
-                      : 'Already up to date',
-                  )
-                  await loadRepoData()
+                  return
                 }
-              } catch (err: any) {
-                // Try to detect conflicts even on error
-                try {
-                  const conflicts = await detectConflicts(name, theirBranch)
-                  if (conflicts.length > 0) {
-                    router.push({
-                      pathname: '/repo/[name]/conflicts' as any,
-                      params: {
-                        name,
-                        theirBranch,
-                        conflicts: JSON.stringify(conflicts),
-                      },
-                    })
-                    return
-                  }
-                } catch {}
-                Alert.alert('Merge failed', err?.message ?? '')
-              } finally {
-                setMerging(false)
-              }
-            },
+              } catch {}
+              Alert.alert('Merge failed', err?.message ?? '')
+            } finally {
+              setMerging(false)
+            }
           },
-        ],
-      )
+        },
+      ])
     },
     [name, branch, loadRepoData, router],
   )
@@ -547,12 +543,10 @@ export default function RepoDetailScreen() {
           onPress={() => setShowBranchPicker(!showBranchPicker)}
         >
           <Text className="text-[#e6edf3] text-xs mr-1">⎇</Text>
-          <Text className="text-[#e6edf3] text-sm font-semibold">
-            {branch}
-          </Text>
+          <Text className="text-[#e6edf3] text-sm font-semibold">{branch}</Text>
           <Text className="text-[#8b949e] text-xs ml-1.5">▼</Text>
         </TouchableOpacity>
-        <View className="flex-row ml-3 gap-3">
+        <View className="flex-row ml-3 gap-3 flex-1">
           <Text className="text-[#8b949e] text-xs">
             {branches.length} branch{branches.length !== 1 ? 'es' : ''}
           </Text>
@@ -560,6 +554,17 @@ export default function RepoDetailScreen() {
             {tags.length} tag{tags.length !== 1 ? 's' : ''}
           </Text>
         </View>
+        <TouchableOpacity
+          className="flex-row items-center px-2.5 py-1.5 rounded-md bg-[#21262d] border border-[#30363d]"
+          onPress={() =>
+            router.push({
+              pathname: '/repo/[name]/graph' as any,
+              params: { name },
+            })
+          }
+        >
+          <Text className="text-[#d2a8ff] text-xs font-semibold">⑂ Graph</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Branch picker dropdown */}
@@ -682,9 +687,7 @@ export default function RepoDetailScreen() {
                 <View className="flex-row flex-wrap mb-2">
                   {viewingFile.split('/').map((seg, i, arr) => (
                     <Text key={i} className="text-[#8b949e] text-xs">
-                      {i > 0 && (
-                        <Text className="text-[#484f58]"> / </Text>
-                      )}
+                      {i > 0 && <Text className="text-[#484f58]"> / </Text>}
                       <Text
                         className={
                           i === arr.length - 1
@@ -707,9 +710,7 @@ export default function RepoDetailScreen() {
                       <Text className="text-[#8b949e] text-xs">
                         {fileContent.split('\n').length} lines
                       </Text>
-                      <Text className="text-[#8b949e] text-xs">
-                        {branch}
-                      </Text>
+                      <Text className="text-[#8b949e] text-xs">{branch}</Text>
                     </View>
                     {/* Code lines */}
                     <ScrollView horizontal>
@@ -954,9 +955,7 @@ export default function RepoDetailScreen() {
                           className="px-2.5 py-1 rounded bg-[#21262d] border border-[#30363d]"
                           onPress={() => handleDeleteBranch(b)}
                         >
-                          <Text className="text-[#f85149] text-xs">
-                            Delete
-                          </Text>
+                          <Text className="text-[#f85149] text-xs">Delete</Text>
                         </TouchableOpacity>
                       </>
                     )}

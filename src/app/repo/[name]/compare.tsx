@@ -112,8 +112,19 @@ export default function CompareScreen() {
       setExpandedFile(filepath)
       setLoadingDiff(true)
       try {
-        const diff = await diffFile(name!, filepath, baseBranch, compareBranch as any)
-        setFileDiff({ filepath, oldContent: typeof diff.oldContent === 'string' ? diff.oldContent : null, newContent: typeof diff.newContent === 'string' ? diff.newContent : null })
+        const diff = await diffFile(
+          name!,
+          filepath,
+          baseBranch,
+          compareBranch as any,
+        )
+        setFileDiff({
+          filepath,
+          oldContent:
+            typeof diff.oldContent === 'string' ? diff.oldContent : null,
+          newContent:
+            typeof diff.newContent === 'string' ? diff.newContent : null,
+        })
       } catch {
         setFileDiff({ filepath, oldContent: null, newContent: null })
       } finally {
@@ -352,9 +363,7 @@ export default function CompareScreen() {
                         </Text>
                         <Text className="text-[#484f58] text-xs mt-0.5">
                           {c.author} · {timeAgo(c.timestamp)} ·{' '}
-                          <Text className="font-mono">
-                            {c.oid.slice(0, 7)}
-                          </Text>
+                          <Text className="font-mono">{c.oid.slice(0, 7)}</Text>
                         </Text>
                       </View>
                     </View>
@@ -463,31 +472,40 @@ function renderUnifiedDiff(
             {i + 1}
           </Text>
           <Text className="text-[#e6edf3] text-[10px] font-mono">
-            {'  '}{oldLine ?? ''}
+            {'  '}
+            {oldLine ?? ''}
           </Text>
         </View>,
       )
     } else {
-      if (oldLine !== undefined && (newLine === undefined || oldLine !== newLine)) {
+      if (
+        oldLine !== undefined &&
+        (newLine === undefined || oldLine !== newLine)
+      ) {
         rows.push(
           <View key={`${i}-old`} className="flex-row bg-[#3d1f28]">
             <Text className="text-[#f85149] text-[10px] w-6 text-right mr-1 font-mono">
               {i + 1}
             </Text>
             <Text className="text-[#ffa198] text-[10px] font-mono">
-              {'- '}{oldLine}
+              {'- '}
+              {oldLine}
             </Text>
           </View>,
         )
       }
-      if (newLine !== undefined && (oldLine === undefined || oldLine !== newLine)) {
+      if (
+        newLine !== undefined &&
+        (oldLine === undefined || oldLine !== newLine)
+      ) {
         rows.push(
           <View key={`${i}-new`} className="flex-row bg-[#1b3826]">
             <Text className="text-[#7ee787] text-[10px] w-6 text-right mr-1 font-mono">
               {i + 1}
             </Text>
             <Text className="text-[#aff5b4] text-[10px] font-mono">
-              {'+ '}{newLine}
+              {'+ '}
+              {newLine}
             </Text>
           </View>,
         )

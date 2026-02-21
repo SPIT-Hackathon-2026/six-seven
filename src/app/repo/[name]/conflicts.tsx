@@ -86,7 +86,7 @@ export default function ConflictResolutionScreen() {
         setLoading(false)
       }
     })()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [name, theirBranch])
 
   /* ─── resolve helpers ─── */
@@ -97,8 +97,7 @@ export default function ConflictResolutionScreen() {
         next[index] = {
           ...next[index],
           strategy,
-          resolved:
-            strategy === 'ours' ? next[index].ours : next[index].theirs,
+          resolved: strategy === 'ours' ? next[index].ours : next[index].theirs,
         }
         return next
       })
@@ -131,7 +130,10 @@ export default function ConflictResolutionScreen() {
         }
       }
       await stageAll(name)
-      await commit(name, `Merge ${theirBranch} into ${branch} (resolved conflicts)`)
+      await commit(
+        name,
+        `Merge ${theirBranch} into ${branch} (resolved conflicts)`,
+      )
       Alert.alert('Success', 'All conflicts resolved and committed', [
         { text: 'OK', onPress: () => router.back() },
       ])
@@ -334,19 +336,18 @@ export default function ConflictResolutionScreen() {
                       Ours ({branch})
                     </Text>
                   </View>
-                  <ScrollView
-                    style={{ maxHeight: 250 }}
-                    nestedScrollEnabled
-                  >
+                  <ScrollView style={{ maxHeight: 250 }} nestedScrollEnabled>
                     <View className="p-2">
-                      {(current.ours ?? '(empty)').split('\n').map((line, i) => (
-                        <Text
-                          key={i}
-                          className="text-[#e6edf3] text-[10px] font-mono"
-                        >
-                          {line || ' '}
-                        </Text>
-                      ))}
+                      {(current.ours ?? '(empty)')
+                        .split('\n')
+                        .map((line, i) => (
+                          <Text
+                            key={i}
+                            className="text-[#e6edf3] text-[10px] font-mono"
+                          >
+                            {line || ' '}
+                          </Text>
+                        ))}
                     </View>
                   </ScrollView>
                 </View>
@@ -358,10 +359,7 @@ export default function ConflictResolutionScreen() {
                       Theirs ({theirBranch})
                     </Text>
                   </View>
-                  <ScrollView
-                    style={{ maxHeight: 250 }}
-                    nestedScrollEnabled
-                  >
+                  <ScrollView style={{ maxHeight: 250 }} nestedScrollEnabled>
                     <View className="p-2">
                       {(current.theirs ?? '(empty)')
                         .split('\n')
