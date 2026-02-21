@@ -1,199 +1,391 @@
 import { useCallback, useState } from 'react'
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native'
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
+  TextInput,
+  RefreshControl,
+} from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
-import * as FileSystem from 'expo-file-system/legacy'
+
+import { listRepos } from '@/services/repoService'
+import {
+  listFiles,
+  readFile,
+  writeFile,
+  deleteFile,
+  createDirectory,
+  deleteDirectory,
+} from '@/services/fileService'
 
 type TreeNode = {
   name: string
-  path: string
+  relPath: string
   isDirectory: boolean
   children?: TreeNode[]
   expanded?: boolean
 }
 
-const PROJECT_ROOT = FileSystem.documentDirectory || ''
-
-async function loadDirectory(path: string): Promise<TreeNode[]> {
-  try {
-    const names = await FileSystem.readDirectoryAsync(path)
-    const items: TreeNode[] = []
-
-    for (const name of names) {
-      if (name.startsWith('.')) continue
-      const fullPath = `${path}/${name}`
-      const info = await FileSystem.getInfoAsync(fullPath)
-      items.push({
-        name,
-        path: fullPath,
-        isDirectory: info.isDirectory === true,
-      })
-    }
-
-    return items.sort((a, b) => {
-      if (a.isDirectory !== b.isDirectory) return b.isDirectory ? 1 : -1
-      return a.name.localeCompare(b.name)
-    })
-  } catch (err) {
-    console.error('Failed to load directory:', err)
-    return []
-  }
-}
-
-function FileTreeNode({
-  node,
-  level,
-  onToggle,
-}: {
-  node: TreeNode
-  level: number
-  onToggle: (path: string) => void
-}) {
-  const icon = node.isDirectory
-    ? node.expanded
-      ? '▼'
-      : '▶'
-    : '  '
-  const typeIcon = node.isDirectory ? '📁' : '📄'
-
-  return (
-    <View>
-      <TouchableOpacity
-        className="flex-row items-center py-2"
-        style={{ paddingLeft: level * 16 }}
-        onPress={() => node.isDirectory && onToggle(node.path)}
-      >
-        <Text className="text-[#8b949e] w-4">{node.isDirectory ? icon : ' '}</Text>
-        <Text className="mx-1">{typeIcon}</Text>
-        <Text className="text-[#c9d1d9] flex-1 text-sm">{node.name}</Text>
-        {node.isDirectory && node.expanded && node.children?.length === 0 && (
-          <ActivityIndicator size="small" color="#8b949e" />
-        )}
-      </TouchableOpacity>
-
-      {node.expanded && node.children && (
-        <>
-          {node.children.map((child) => (
-            <FileTreeNode key={child.path} node={child} level={level + 1} onToggle={onToggle} />
-          ))}
-        </>
-      )}
-    </View>
-  )
-}
-
 export default function FilesScreen() {
   const router = useRouter()
+  const [repos, setRepos] = useState<string[]>([])
+  const [selectedRepo, setSelectedRepo] = useState<string | null>(null)
+  const [showRepoPicker, setShowRepoPicker] = useState(false)
   const [tree, setTree] = useState<TreeNode[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const [crumbs, setCrumbs] = useState<string[]>([])
 
-  const loadRootFiles = useCallback(async () => {
-    setLoading(true)
-    try {
-      const items = await loadDirectory(PROJECT_ROOT)
-      setTree(items)
-    } catch (err: any) {
-      Alert.alert('Error', 'Failed to load files')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  // Editor state
+  const [editingFile, setEditingFile] = useState<string | null>(null)
+  const [fileContent, setFileContent] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  // New file/folder dialog
+  const [showNew, setShowNew] = useState<'file' | 'folder' | null>(null)
+  const [newName, setNewName] = useState('')
+
+  // Load repos
+  useFocusEffect(
+    useCallback(() => {
+      ;(async () => {
+        const list = await listRepos()
+        const names = list.map((r) => r.name)
+        setRepos(names)
+        if (names.length > 0 && !selectedRepo) setSelectedRepo(names[0])
+      })()
+    }, []),
+  )
+
+  // Load directory
+  const loadDir = useCallback(
+    async (subDir = '') => {
+      if (!selectedRepo) return
+      setLoading(true)
+      try {
+        const items = await listFiles(selectedRepo, subDir)
+        const nodes: TreeNode[] = items
+          .filter((i: any) => !i.name.startsWith('.'))
+          .map((i: any) => ({
+            name: i.name,
+            relPath: subDir ? `${subDir}/${i.name}` : i.name,
+            isDirectory: i.isDirectory,
+          }))
+          .sort((a: TreeNode, b: TreeNode) => {
+            if (a.isDirectory !== b.isDirectory) return b.isDirectory ? 1 : -1
+            return a.name.localeCompare(b.name)
+          })
+        setTree(nodes)
+        setCrumbs(subDir ? subDir.split('/') : [])
+      } catch (err: any) {
+        Alert.alert('Error', err?.message ?? 'Failed to list files')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [selectedRepo],
+  )
 
   useFocusEffect(
     useCallback(() => {
-      loadRootFiles()
-    }, [loadRootFiles]),
+      if (selectedRepo) loadDir('')
+    }, [selectedRepo, loadDir]),
   )
 
-  const handleToggle = useCallback(async (path: string) => {
-    setTree((prevTree) => {
-      const updateNode = (nodes: TreeNode[]): TreeNode[] => {
-        return nodes.map((node) => {
-          if (node.path === path) {
-            return {
-              ...node,
-              expanded: !node.expanded,
-              children:
-                !node.expanded && node.children === undefined ? [] : node.children,
+  const currentDir = crumbs.join('/')
+
+  const handleNavigate = useCallback(
+    (node: TreeNode) => {
+      if (node.isDirectory) {
+        loadDir(node.relPath)
+      } else {
+        // Open file editor
+        ;(async () => {
+          try {
+            const content = await readFile(selectedRepo!, node.relPath)
+            setFileContent(content)
+            setEditingFile(node.relPath)
+          } catch (err: any) {
+            Alert.alert('Error', err?.message ?? 'Cannot read file')
+          }
+        })()
+      }
+    },
+    [selectedRepo, loadDir],
+  )
+
+  const handleBack = useCallback(() => {
+    if (crumbs.length === 0) return
+    const parent = crumbs.slice(0, -1).join('/')
+    loadDir(parent)
+  }, [crumbs, loadDir])
+
+  const handleSaveFile = useCallback(async () => {
+    if (!selectedRepo || !editingFile) return
+    setSaving(true)
+    try {
+      await writeFile(selectedRepo, editingFile, fileContent)
+      Alert.alert('Saved', editingFile)
+    } catch (err: any) {
+      Alert.alert('Save failed', err?.message ?? '')
+    } finally {
+      setSaving(false)
+    }
+  }, [selectedRepo, editingFile, fileContent])
+
+  const handleDeleteItem = useCallback(
+    (node: TreeNode) => {
+      Alert.alert('Delete', `Delete ${node.name}?`, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (node.isDirectory) {
+                await deleteDirectory(selectedRepo!, node.relPath)
+              } else {
+                await deleteFile(selectedRepo!, node.relPath)
+              }
+              loadDir(currentDir)
+            } catch (err: any) {
+              Alert.alert('Error', err?.message ?? 'Delete failed')
             }
-          }
-          return {
-            ...node,
-            children: node.children ? updateNode(node.children) : undefined,
-          }
-        })
+          },
+        },
+      ])
+    },
+    [selectedRepo, currentDir, loadDir],
+  )
+
+  const handleCreate = useCallback(async () => {
+    if (!selectedRepo || !newName.trim()) return
+    const path = currentDir ? `${currentDir}/${newName.trim()}` : newName.trim()
+    try {
+      if (showNew === 'folder') {
+        await createDirectory(selectedRepo, path)
+      } else {
+        await writeFile(selectedRepo, path, '')
       }
-      return updateNode(prevTree)
-    })
+      setShowNew(null)
+      setNewName('')
+      loadDir(currentDir)
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Create failed')
+    }
+  }, [selectedRepo, currentDir, showNew, newName, loadDir])
 
-    // Load children if not already loaded
-    setTree((prevTree) => {
-      const expandedNotLoaded: TreeNode[] = []
-
-      const findNode = (nodes: TreeNode[], targetPath: string): TreeNode | null => {
-        for (const node of nodes) {
-          if (node.path === targetPath) return node
-          if (node.children) {
-            const found = findNode(node.children, targetPath)
-            if (found) return found
-          }
-        }
-        return null
-      }
-
-      const node = findNode(prevTree, path)
-      if (node?.expanded && (!node.children || node.children.length === 0)) {
-        loadDirectory(path).then((children) => {
-          setTree((tree) => {
-            const updateNode = (nodes: TreeNode[]): TreeNode[] => {
-              return nodes.map((n) => {
-                if (n.path === path) {
-                  return { ...n, children }
-                }
-                return {
-                  ...n,
-                  children: n.children ? updateNode(n.children) : undefined,
-                }
-              })
-            }
-            return updateNode(tree)
-          })
-        })
-      }
-
-      return prevTree
-    })
-  }, [])
+  // File editor view
+  if (editingFile) {
+    return (
+      <View className="flex-1 bg-[#0d1117]">
+        <View className="flex-row items-center justify-between px-5 py-3 border-b border-[#30363d]">
+          <TouchableOpacity onPress={() => setEditingFile(null)}>
+            <Text className="text-[#58a6ff] text-base font-semibold">
+              ‹ Back
+            </Text>
+          </TouchableOpacity>
+          <Text
+            className="text-[#e6edf3] text-sm font-bold flex-1 text-center"
+            numberOfLines={1}
+          >
+            {editingFile.split('/').pop()}
+          </Text>
+          <TouchableOpacity onPress={handleSaveFile} disabled={saving}>
+            <Text className="text-[#58a6ff] text-base font-semibold">
+              {saving ? '...' : 'Save'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        <ScrollView className="flex-1" keyboardShouldPersistTaps="always">
+          <TextInput
+            className="text-[#c9d1d9] text-sm p-4 flex-1"
+            style={{ fontFamily: 'monospace', minHeight: 400 }}
+            value={fileContent}
+            onChangeText={setFileContent}
+            multiline
+            autoCapitalize="none"
+            autoCorrect={false}
+            scrollEnabled={false}
+          />
+        </ScrollView>
+        <View className="px-5 py-2 border-t border-[#30363d]">
+          <Text className="text-[#484f58] text-xs">{editingFile}</Text>
+        </View>
+      </View>
+    )
+  }
 
   return (
     <View className="flex-1 bg-[#0d1117]">
       {/* Header */}
       <View className="flex-row items-center justify-between px-5 py-4 border-b border-[#30363d]">
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text className="text-[#58a6ff] text-2xl">‹</Text>
-        </TouchableOpacity>
-        <Text className="text-[#e6edf3] text-lg font-bold flex-1 text-center">Files</Text>
-        <TouchableOpacity onPress={() => Alert.alert('Options', 'More options coming')}>
-          <Text className="text-[#8b949e] text-2xl">⋯</Text>
-        </TouchableOpacity>
+        <Text className="text-[#e6edf3] text-lg font-bold">Files</Text>
+        <View className="flex-row gap-2">
+          <TouchableOpacity
+            className="px-3 py-1 rounded-md bg-[#21262d]"
+            onPress={() => {
+              setShowNew('file')
+              setNewName('')
+            }}
+          >
+            <Text className="text-[#c9d1d9] text-xs">+ File</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            className="px-3 py-1 rounded-md bg-[#21262d]"
+            onPress={() => {
+              setShowNew('folder')
+              setNewName('')
+            }}
+          >
+            <Text className="text-[#c9d1d9] text-xs">+ Folder</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#58a6ff" />
+      {/* Repo picker */}
+      <TouchableOpacity
+        className="mx-5 mt-3 px-4 py-2.5 rounded-lg bg-[#161b22] border border-[#30363d] flex-row items-center justify-between"
+        onPress={() => setShowRepoPicker(!showRepoPicker)}
+      >
+        <Text className="text-[#e6edf3] font-semibold">
+          {selectedRepo ?? 'Select repo'}
+        </Text>
+        <Text className="text-[#8b949e]">{showRepoPicker ? '▲' : '▼'}</Text>
+      </TouchableOpacity>
+      {showRepoPicker && (
+        <View className="mx-5 mt-1 rounded-lg bg-[#161b22] border border-[#30363d] max-h-40">
+          <ScrollView>
+            {repos.map((r) => (
+              <TouchableOpacity
+                key={r}
+                className="px-4 py-2.5 border-b border-[#21262d]"
+                onPress={() => {
+                  setSelectedRepo(r)
+                  setShowRepoPicker(false)
+                  setCrumbs([])
+                }}
+              >
+                <Text
+                  className={
+                    r === selectedRepo
+                      ? 'text-[#58a6ff] font-semibold'
+                      : 'text-[#c9d1d9]'
+                  }
+                >
+                  {r}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
-      ) : (
-        <ScrollView className="flex-1 px-3" contentContainerStyle={{ paddingBottom: 140 }}>
-          {tree.length === 0 ? (
-            <View className="mt-4 items-center">
-              <Text className="text-[#8b949e]">No files found</Text>
-            </View>
-          ) : (
-            tree.map((node) => (
-              <FileTreeNode key={node.path} node={node} level={0} onToggle={handleToggle} />
-            ))
-          )}
-        </ScrollView>
       )}
+
+      {/* Breadcrumbs */}
+      {selectedRepo && (
+        <View className="flex-row items-center mx-5 mt-2 flex-wrap">
+          <TouchableOpacity onPress={() => loadDir('')}>
+            <Text className="text-[#58a6ff] text-xs font-semibold">
+              {selectedRepo}
+            </Text>
+          </TouchableOpacity>
+          {crumbs.map((crumb, idx) => (
+            <View key={idx} className="flex-row items-center">
+              <Text className="text-[#484f58] text-xs mx-1">/</Text>
+              <TouchableOpacity
+                onPress={() => loadDir(crumbs.slice(0, idx + 1).join('/'))}
+              >
+                <Text className="text-[#58a6ff] text-xs font-semibold">
+                  {crumb}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* New file/folder dialog */}
+      {showNew && (
+        <View className="mx-5 mt-2 rounded-lg bg-[#161b22] border border-[#30363d] p-3 flex-row items-center gap-2">
+          <TextInput
+            className="flex-1 bg-[#0d1117] text-[#e6edf3] px-3 py-1.5 rounded-md border border-[#30363d] text-sm"
+            value={newName}
+            onChangeText={setNewName}
+            placeholder={showNew === 'file' ? 'filename.txt' : 'folder-name'}
+            placeholderTextColor="#484f58"
+            autoFocus
+          />
+          <TouchableOpacity
+            className="px-3 py-1.5 rounded-md bg-[#1f6feb]"
+            onPress={handleCreate}
+          >
+            <Text className="text-white text-sm">Create</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowNew(null)}>
+            <Text className="text-[#8b949e] text-sm">✕</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <ScrollView
+        className="flex-1 px-5 mt-2"
+        contentContainerStyle={{ paddingBottom: 160 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={loading}
+            onRefresh={() => loadDir(currentDir)}
+            tintColor="#58a6ff"
+          />
+        }
+      >
+        {!selectedRepo ? (
+          <View className="mt-8 items-center">
+            <Text className="text-[#8b949e]">No repository selected</Text>
+          </View>
+        ) : loading && tree.length === 0 ? (
+          <View className="mt-8 items-center">
+            <ActivityIndicator color="#58a6ff" />
+          </View>
+        ) : tree.length === 0 ? (
+          <View className="mt-8 items-center">
+            <Text className="text-[#8b949e] text-base">Empty directory</Text>
+            <Text className="text-[#484f58] text-sm mt-1">
+              Create a file or folder to get started
+            </Text>
+          </View>
+        ) : (
+          <>
+            {crumbs.length > 0 && (
+              <TouchableOpacity
+                className="flex-row items-center py-2.5 border-b border-[#21262d]"
+                onPress={handleBack}
+              >
+                <Text className="text-[#58a6ff] text-sm">↑ ..</Text>
+              </TouchableOpacity>
+            )}
+            {tree.map((node) => (
+              <TouchableOpacity
+                key={node.relPath}
+                className="flex-row items-center py-2.5 border-b border-[#21262d]"
+                onPress={() => handleNavigate(node)}
+                onLongPress={() => handleDeleteItem(node)}
+              >
+                <Text className="mr-2 text-base">
+                  {node.isDirectory ? '📁' : '📄'}
+                </Text>
+                <Text className="text-[#c9d1d9] text-sm flex-1">
+                  {node.name}
+                </Text>
+                {node.isDirectory && (
+                  <Text className="text-[#484f58] text-sm">›</Text>
+                )}
+              </TouchableOpacity>
+            ))}
+          </>
+        )}
+      </ScrollView>
     </View>
   )
 }
