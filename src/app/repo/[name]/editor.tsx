@@ -11,11 +11,14 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router'
 
 import { readFile, writeFile, fileExists } from '@/services/fileService'
-import { stageFile, getFileStatus, diffFile, readFileAtRef, isSparseRepo } from '@/services/gitService'
+import { stageFile, getFileStatus, diffFile, isSparseRepo } from '@/services/gitService'
+import { materializeFile, touchCacheEntry } from '@/services/sparseCacheService'
 
 export default function EditorScreen() {
   const router = useRouter()
   const { name, file } = useLocalSearchParams<{ name: string; file: string }>()
+
+  // ── State (all hooks must be declared before any early return) ──────────
   const [content, setContent] = useState('')
   const [originalContent, setOriginalContent] = useState('')
   const [loading, setLoading] = useState(true)
@@ -23,30 +26,37 @@ export default function EditorScreen() {
   const [showDiff, setShowDiff] = useState(false)
   const [diffText, setDiffText] = useState('')
   const [status, setStatus] = useState('')
+  const [fileTooLarge, setFileTooLarge] = useState<string | null>(null)
 
+  // ── Load file ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!name || !file) return
     ;(async () => {
       setLoading(true)
+      setFileTooLarge(null)
       try {
-        let text: string
         const exists = await fileExists(name, file)
         if (exists) {
-          // Normal repo: file already on disk
-          text = await readFile(name, file)
+          const text = await readFile(name, file)
+          await touchCacheEntry(name, file).catch(() => {})
+          setContent(text)
+          setOriginalContent(text)
         } else {
-          // Sparse/lazy repo: read from git blob store, then materialize to disk
           const sparse = await isSparseRepo(name)
           if (sparse) {
-            text = await readFileAtRef(name, file, 'HEAD')
-            // Write to disk so stageFile + writeFile work normally after editing
-            await writeFile(name, file, text)
+            const result = await materializeFile(name, file, 'HEAD')
+            if (result.tooLargeForEditor || result.oomError) {
+              setFileTooLarge(result.sizeMB)
+            } else {
+              setContent(result.content!)
+              setOriginalContent(result.content!)
+            }
           } else {
-            text = await readFile(name, file) // will throw with a clear error
+            const text = await readFile(name, file)
+            setContent(text)
+            setOriginalContent(text)
           }
         }
-        setContent(text)
-        setOriginalContent(text)
         const stat = await getFileStatus(name, file).catch(() => null)
         if (stat) setStatus(stat)
       } catch (err: any) {
@@ -57,6 +67,7 @@ export default function EditorScreen() {
     })()
   }, [name, file])
 
+  // ── Callbacks (all before any conditional return) ────────────────────────
   const hasChanges = content !== originalContent
 
   const handleSave = useCallback(async () => {
@@ -108,6 +119,7 @@ export default function EditorScreen() {
     }
   }, [name, file])
 
+  // ── Early returns (only after ALL hooks are declared) ────────────────────
   if (!name || !file) {
     return (
       <View className="flex-1 bg-neutral-100 dark:bg-black items-center justify-center">
@@ -124,6 +136,30 @@ export default function EditorScreen() {
     )
   }
 
+  if (fileTooLarge) {
+    return (
+      <View className="flex-1 bg-neutral-100 dark:bg-black items-center justify-center px-8">
+        <View className="bg-white dark:bg-zinc-900 rounded-2xl p-6 border border-neutral-200 dark:border-zinc-800 w-full items-center">
+          <Text style={{ fontSize: 40 }}>📦</Text>
+          <Text className="text-black dark:text-white text-lg font-bold mt-3 text-center">File Too Large</Text>
+          <Text className="text-neutral-500 text-sm text-center mt-2">
+            This file is <Text className="text-[#f78166] font-bold">{fileTooLarge} MB</Text> — too large to safely open in the mobile editor.
+          </Text>
+          <Text className="text-neutral-400 text-xs text-center mt-3">
+            It is tracked and cached in the repository. Use a desktop environment to view or edit files this large.
+          </Text>
+          <TouchableOpacity
+            className="mt-5 px-5 py-2.5 rounded-xl bg-[#1f6feb] items-center"
+            onPress={() => router.back()}
+          >
+            <Text className="text-white font-bold text-sm">Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    )
+  }
+
+  // ── Main editor UI ───────────────────────────────────────────────────────
   return (
     <View className="flex-1 bg-neutral-100 dark:bg-black">
       {/* Header */}

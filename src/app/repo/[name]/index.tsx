@@ -70,7 +70,17 @@ import {
   fetchRemote,
   pullRemote,
   pushRemote,
+  isSparseRepo,
 } from '@/services/gitService';
+import { getCacheStats } from '@/services/sparseCacheService';
+import {
+  isQuickBrowseRepo,
+  listQuickBrowseFiles,
+  getQuickBrowseStats,
+  fetchQuickBrowseFile,
+  commitQuickBrowseFile,
+} from '@/services/quickBrowseService';
+
 import { deleteRepo, getRepoSize } from '@/services/repoService';
 import { stash, stashPop } from '@/services/stashService';
 import { isOnline } from '@/services/networkService';
@@ -215,6 +225,10 @@ export default function RepoDetailScreen() {
   const [commits, setCommits] = useState<CommitEntry[]>([])
   const [repoSize, setRepoSize] = useState('...')
   const [loading, setLoading] = useState(true)
+  const [isLazy, setIsLazy] = useState(false)
+  const [cacheStats, setCacheStats] = useState<{totalSize:number,fileCount:number,maxSize:number} | null>(null)
+  const [isQuickBrowse, setIsQuickBrowse] = useState(false)
+  const [quickBrowseStats, setQuickBrowseStats] = useState<{owner:string,repo:string,branch:string,totalFiles:number,downloadedCount:number} | null>(null)
 
   /* — UI state — */
   const [activeTab, setActiveTab] = useState<
@@ -305,6 +319,21 @@ export default function RepoDetailScreen() {
     if (!name) return
     setLoading(true)
     try {
+      // ── Quick Browse repos skip all git operations ──────────────────────
+      const qb = await isQuickBrowseRepo(name)
+      setIsQuickBrowse(qb)
+      if (qb) {
+        const [files, stats] = await Promise.all([
+          listQuickBrowseFiles(name),
+          getQuickBrowseStats(name),
+        ])
+        setTreeFiles(files)
+        setQuickBrowseStats(stats)
+        setBranch(stats?.branch ?? 'main')
+        setRepoSize('0 B')
+        setLoading(false)
+        return
+      }
       const [br, brs, status, log, tgs, size] = await Promise.all([
         currentBranch(name).catch(() => 'main'),
         listBranches(name).catch(() => []),
@@ -338,6 +367,18 @@ export default function RepoDetailScreen() {
       } catch {
         setTreeFiles([])
       }
+
+      // Lazy / sparse repo indicator
+      try {
+        const lazy = await isSparseRepo(name)
+        setIsLazy(lazy)
+        if (lazy) {
+          const stats = await getCacheStats(name)
+          setCacheStats(stats)
+        } else {
+          setCacheStats(null)
+        }
+      } catch { /* non-critical */ }
 
       // Check remote & GitHub link
       const rUrl = await getRemoteUrl(name).catch(() => null)
@@ -380,15 +421,25 @@ export default function RepoDetailScreen() {
       setLoadingFile(true)
       setViewingFile(filepath)
       try {
-        const content = await readFileAtRef(name, filepath, branch)
-        setFileContent(content)
-      } catch {
-        setFileContent('(unable to read file)')
+        if (isQuickBrowse) {
+          // Quick Browse: fetch from GitHub API on demand
+          const result = await fetchQuickBrowseFile(name, filepath)
+          setFileContent(result.content)
+        } else {
+          const content = await readFileAtRef(name, filepath, branch)
+          setFileContent(content)
+        }
+      } catch (e: any) {
+        if (e?.message?.startsWith('FILE_TOO_LARGE:')) {
+          setFileContent('(file too large to display in preview)')
+        } else {
+          setFileContent('(unable to read file)')
+        }
       } finally {
         setLoadingFile(false)
       }
     },
-    [name, branch],
+    [name, branch, isQuickBrowse],
   )
 
   const handleCommit = useCallback(async () => {
@@ -829,6 +880,20 @@ export default function RepoDetailScreen() {
             {name}
           </Text>
           <Text className="text-neutral-500 text-xs">{repoSize}</Text>
+          {isLazy && cacheStats !== null && (
+            <View className="flex-row items-center mt-1 px-2 py-0.5 rounded-full" style={{ backgroundColor: '#1f6feb33' }}>
+              <Text style={{ color: '#58a6ff', fontSize: 10, fontWeight: '700' }}>
+                ⚡ Lazy · {cacheStats.fileCount} file{cacheStats.fileCount !== 1 ? 's' : ''} · {(cacheStats.totalSize / 1024 / 1024).toFixed(1)} / 20 MB
+              </Text>
+            </View>
+          )}
+          {isQuickBrowse && quickBrowseStats && (
+            <View className="flex-row items-center mt-1 px-2 py-0.5 rounded-full" style={{ backgroundColor: '#238636' + '33' }}>
+              <Text style={{ color: '#7ee787', fontSize: 10, fontWeight: '700' }}>
+                ⚡ Quick Browse · {quickBrowseStats.downloadedCount}/{quickBrowseStats.totalFiles} files downloaded
+              </Text>
+            </View>
+          )}
         </View>
         <TouchableOpacity onPress={handleDeleteRepo} className="p-2">
           <Trash2 size={20} color="#f85149" />

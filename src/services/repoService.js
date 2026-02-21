@@ -23,10 +23,12 @@ export async function listRepos() {
     const info = await FileSystem.getInfoAsync(itemPath)
     if (info.isDirectory) {
       const gitInfo = await FileSystem.getInfoAsync(`${itemPath}/.git`)
+      const quickBrowseInfo = await FileSystem.getInfoAsync(`${itemPath}/.quick_browse.json`)
       repos.push({
         name,
         path: itemPath,
         isGitRepo: gitInfo.exists,
+        isQuickBrowse: quickBrowseInfo.exists,
       })
     }
   }

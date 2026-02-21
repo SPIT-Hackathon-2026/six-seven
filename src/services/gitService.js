@@ -27,6 +27,36 @@ export async function isSparseRepo(repoName) {
   }
 }
 
+/**
+ * Returns the number of files that have been materialized to disk in a sparse
+ * (lazy) repo. In a normal repo this equals all tracked files.
+ */
+export async function getMaterializedCount(repoName) {
+  const dir = getRepoPath(repoName)
+  try {
+    let count = 0
+    const IGNORE = new Set(['.git', '.sparse'])
+    async function walk(d) {
+      let entries
+      try { entries = await FileSystem.readDirectoryAsync(d) } catch { return }
+      for (const entry of entries) {
+        if (IGNORE.has(entry)) continue
+        const full = `${d}/${entry}`
+        const info = await FileSystem.getInfoAsync(full)
+        if (info.isDirectory) {
+          await walk(full)
+        } else {
+          count++
+        }
+      }
+    }
+    await walk(dir)
+    return count
+  } catch {
+    return 0
+  }
+}
+
 // =====================================================================
 //  CONFIG
 // =====================================================================
@@ -945,11 +975,18 @@ export async function readBlob(repoName, oid) {
   return new TextDecoder().decode(blob)
 }
 
-/** Read a file at a specific ref. */
-export async function readFileAtRef(repoName, filepath, ref = 'HEAD') {
+/** Read a file at a specific ref.
+ * Throws an error if the file is larger than `maxBytes` (default 2MB) to
+ * prevent OOM crashes when materializing large binary blobs from sparse repos.
+ */
+export async function readFileAtRef(repoName, filepath, ref = 'HEAD', maxBytes = 2 * 1024 * 1024) {
   const dir = getRepoPath(repoName)
   const commitOid = await git.resolveRef({ fs, dir, ref })
   const { blob } = await git.readBlob({ fs, dir, oid: commitOid, filepath })
+  if (blob.byteLength > maxBytes) {
+    const sizeMB = (blob.byteLength / 1024 / 1024).toFixed(1)
+    throw new Error(`FILE_TOO_LARGE:${sizeMB}`)
+  }
   return new TextDecoder().decode(blob)
 }
 

@@ -26,6 +26,7 @@ import {
   stageAll,
   commitAll,
 } from '@/services/gitService'
+import { quickBrowseClone } from '@/services/quickBrowseService'
 import { isGitHubLinked, listGitHubRepos, createGitHubRepo, getCachedUsername } from '@/services/githubAuth'
 // import removed: isOnline as checkOnline
 import {
@@ -274,15 +275,19 @@ export default function HomeScreen() {
     const repoName = cloneName.trim() || cloneUrl.trim().split('/').pop()?.replace('.git', '') || `clone-${Date.now()}`
     setCloning(true)
     try {
-      await cloneFromGitHub(cloneUrl.trim(), repoName, {
-        noCheckout: cloneLazy,
-        depth: cloneLazy ? 1 : undefined
-      })
+      if (cloneLazy) {
+        // Quick Browse: fetch tree from GitHub API only — zero git data downloaded
+        await quickBrowseClone(cloneUrl.trim(), repoName)
+        Alert.alert('Quick Browse Ready!', `"${repoName}" — browse files, tap to download only what you need.`)
+      } else {
+        // Normal git clone
+        await cloneFromGitHub(cloneUrl.trim(), repoName)
+        Alert.alert('Cloned!', `"${repoName}" is ready`)
+      }
       setShowCloneDialog(false)
       setCloneUrl('')
       setCloneName('')
       setCloneLazy(false)
-      Alert.alert('Cloned!', `"${repoName}" is ready`)
       await refreshRepos()
     } catch (err: any) {
       Alert.alert('Clone failed', err?.message ?? 'Could not clone')
@@ -602,7 +607,7 @@ export default function HomeScreen() {
             autoCapitalize="none"
           />
 
-          {/* Lazy Clone Toggle */}
+          {/* Quick Browse Toggle */}
           <TouchableOpacity
             className="flex-row items-center mt-3 gap-2"
             onPress={() => setCloneLazy(!cloneLazy)}
@@ -611,8 +616,8 @@ export default function HomeScreen() {
               {cloneLazy && <Check size={12} color="#fff" />}
             </View>
             <View>
-              <Text className="text-black dark:text-white text-sm font-medium">Lazy Clone (Save Space)</Text>
-              <Text className="text-neutral-500 text-[10px]">Only downloads actual files when you edit them.</Text>
+              <Text className="text-black dark:text-white text-sm font-medium">⚡ Quick Browse (Large Repos)</Text>
+              <Text className="text-neutral-500 text-[10px]">Browse full repo tree instantly. Downloads only what you open.</Text>
             </View>
           </TouchableOpacity>
 
