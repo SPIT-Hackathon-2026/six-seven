@@ -101,6 +101,12 @@ export default function HomeScreen() {
         <View className="flex-row items-center gap-3">
           <TouchableOpacity
             className="w-9 h-9 rounded-full border border-[#30363d] items-center justify-center"
+            onPress={() => router.push('/transfer')}
+          >
+            <Text className="text-[#c9d1d9] text-lg">📤</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            className="w-9 h-9 rounded-full border border-[#30363d] items-center justify-center"
             onPress={() => router.push('/testing')}
           >
             <Text className="text-[#c9d1d9] text-lg">🧪</Text>
