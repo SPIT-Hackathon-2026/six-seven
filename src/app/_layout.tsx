@@ -24,6 +24,7 @@ export default function RootLayout() {
       >
         <Stack.Screen name="index" options={{ title: 'Repositories' }} />
         <Stack.Screen name="testing" options={{ title: 'Test Runner' }} />
+        <Stack.Screen name="transfer" options={{ title: 'Transfer' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
         <Stack.Screen name="repo/[name]" options={{ headerShown: false }} />
         <Stack.Screen name="repo/[name]/editor" options={{ title: 'Editor' }} />

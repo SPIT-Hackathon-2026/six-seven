@@ -1,95 +1,299 @@
-import { View, Button, Alert, ScrollView } from "react-native";
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from "expo-sharing";
-import * as DocumentPicker from "expo-document-picker";
-import JSZip from 'jszip';
+import { useCallback, useState } from 'react'
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Alert,
+  ScrollView,
+  ActivityIndicator,
+  FlatList,
+} from 'react-native'
+import * as FileSystem from 'expo-file-system/legacy'
+import * as Sharing from 'expo-sharing'
+import * as DocumentPicker from 'expo-document-picker'
+import JSZip from 'jszip'
+import { useFocusEffect } from 'expo-router'
 
-export default function Transfer() {
+import { listRepos, getRepoPath } from '../services/repoService'
+import { initRepo } from '../services/gitService'
 
-  const baseDir = FileSystem.documentDirectory!;
-const repoPath = baseDir + "myrepo/";
-const zipPath = baseDir + "myrepo.zip";
+// ─── helpers ────────────────────────────────────────────────────────
 
-  // 📤 SEND REPO
-  const handleSendRepo = async () => {
+function formatBytes(bytes: number) {
+  if (!bytes) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
+
+// ─── component ──────────────────────────────────────────────────────
+
+type Repo = { name: string; path: string; isGitRepo: boolean }
+
+export default function TransferScreen() {
+  const [repos, setRepos] = useState<Repo[]>([])
+  const [selected, setSelected] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState('')
+
+  const refresh = useCallback(async () => {
     try {
-      const zip = new JSZip();
+      setRepos(await listRepos())
+    } catch {}
+  }, [])
 
-      const addFolderToZip = async (folderPath: string, parent = "") => {
-        const files = await FileSystem.readDirectoryAsync(folderPath);
+  useFocusEffect(
+    useCallback(() => {
+      refresh()
+    }, [refresh]),
+  )
 
-        for (let file of files) {
-          const fullPath = folderPath + file;
-          const fileInfo = await FileSystem.getInfoAsync(fullPath);
+  // ── EXPORT ────────────────────────────────────────────────────────
 
-          if (fileInfo.isDirectory) {
-            await addFolderToZip(fullPath + "/", parent + file + "/");
-          } else {
-            const content = await FileSystem.readAsStringAsync(fullPath, {
-              encoding: 'base64',
-            });
-            zip.file(parent + file, content, { base64: true });
-          }
-        }
-      };
-
-      await addFolderToZip(repoPath);
-
-      const zipped = await zip.generateAsync({ type: "base64" });
-
-      await FileSystem.writeAsStringAsync(zipPath, zipped, {
-        encoding: 'base64',
-      });
-
-      await Sharing.shareAsync(zipPath);
-
-    } catch (error: any) {
-      Alert.alert("Error Sending Repo", error.message);
+  const handleExport = async () => {
+    if (!selected) {
+      Alert.alert('Select a repo', 'Tap a repository from the list first.')
+      return
     }
-  };
 
-  // 📥 IMPORT REPO
-  const handleImportRepo = async () => {
+    setBusy(true)
+    setStatus('Zipping repository…')
+
     try {
-      const result = await DocumentPicker.getDocumentAsync();
+      const repoDir = getRepoPath(selected)
+      const zip = new JSZip()
 
-      if (!result.canceled && result.assets) {
-        const uri = result.assets[0].uri;
-        const zipData = await FileSystem.readAsStringAsync(uri, {
-          encoding: 'base64',
-        });
-
-        const zip = await JSZip.loadAsync(zipData, { base64: true });
-
-        for (const fileName of Object.keys(zip.files)) {
-          const file = zip.files[fileName];
-
-          if (!file.dir) {
-            const content = await file.async("base64");
-            const destPath = repoPath + fileName;
-
-            const folder = destPath.substring(0, destPath.lastIndexOf("/"));
-            await FileSystem.makeDirectoryAsync(folder, { intermediates: true });
-
-            await FileSystem.writeAsStringAsync(destPath, content, {
-              encoding: 'base64',
-            });
+      const addFolder = async (folderUri: string, prefix: string) => {
+        const names = await FileSystem.readDirectoryAsync(folderUri)
+        for (const name of names) {
+          const fullUri = folderUri + '/' + name
+          const info = await FileSystem.getInfoAsync(fullUri)
+          if (info.isDirectory) {
+            await addFolder(fullUri, prefix + name + '/')
+          } else {
+            const content = await FileSystem.readAsStringAsync(fullUri, {
+              encoding: FileSystem.EncodingType.Base64,
+            })
+            zip.file(prefix + name, content, { base64: true })
           }
         }
-
-        Alert.alert("Success", "Repository Imported Successfully!");
       }
 
-    } catch (error: any) {
-      Alert.alert("Error Importing Repo", error.message);
+      await addFolder(repoDir, '')
+
+      setStatus('Generating zip file…')
+      const base64Zip = await zip.generateAsync({ type: 'base64' })
+
+      const zipPath = FileSystem.cacheDirectory + selected + '.zip'
+      await FileSystem.writeAsStringAsync(zipPath, base64Zip, {
+        encoding: FileSystem.EncodingType.Base64,
+      })
+
+      setStatus('Opening share sheet…')
+
+      const canShare = await Sharing.isAvailableAsync()
+      if (!canShare) {
+        Alert.alert(
+          'Sharing not available',
+          'This device does not support sharing.',
+        )
+        return
+      }
+
+      await Sharing.shareAsync(zipPath, {
+        mimeType: 'application/zip',
+        dialogTitle: `Share ${selected}.zip`,
+        UTI: 'public.zip-archive',
+      })
+
+      setStatus(`Exported ${selected}.zip ✓`)
+    } catch (e: any) {
+      Alert.alert('Export Error', e.message)
+      setStatus('')
+    } finally {
+      setBusy(false)
     }
-  };
+  }
+
+  // ── IMPORT ────────────────────────────────────────────────────────
+
+  const handleImport = async () => {
+    setBusy(true)
+    setStatus('Picking file…')
+
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/zip',
+        copyToCacheDirectory: true,
+      })
+
+      if (result.canceled || !result.assets?.length) {
+        setStatus('')
+        setBusy(false)
+        return
+      }
+
+      const uri = result.assets[0].uri
+      const fileName = result.assets[0].name ?? 'imported-repo.zip'
+      const repoName = fileName
+        .replace(/\.zip$/i, '')
+        .replace(/[^a-zA-Z0-9_-]/g, '-')
+
+      setStatus(`Reading ${fileName}…`)
+      const zipData = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      })
+
+      setStatus('Extracting files…')
+      const zip = await JSZip.loadAsync(zipData, { base64: true })
+      const entries = Object.keys(zip.files)
+
+      // Create repo via git service (initialises .git)
+      // If the zip already contains .git, we skip init and just write files
+      const hasGitDir = entries.some(
+        (e) => e === '.git/' || e.startsWith('.git/'),
+      )
+
+      const targetDir = getRepoPath(repoName)
+      await FileSystem.makeDirectoryAsync(targetDir, { intermediates: true })
+
+      if (!hasGitDir) {
+        // Init a fresh git repo then overlay the files
+        try {
+          await initRepo(repoName)
+        } catch {}
+      }
+
+      let count = 0
+      for (const entryName of entries) {
+        const entry = zip.files[entryName]
+        if (entry.dir) {
+          await FileSystem.makeDirectoryAsync(targetDir + '/' + entryName, {
+            intermediates: true,
+          })
+        } else {
+          const content = await entry.async('base64')
+          const destPath = targetDir + '/' + entryName
+          const folder = destPath.substring(0, destPath.lastIndexOf('/'))
+          await FileSystem.makeDirectoryAsync(folder, { intermediates: true })
+          await FileSystem.writeAsStringAsync(destPath, content, {
+            encoding: FileSystem.EncodingType.Base64,
+          })
+          count++
+        }
+      }
+
+      setStatus(`Imported "${repoName}" (${count} files) ✓`)
+      Alert.alert(
+        'Success',
+        `Repository "${repoName}" imported with ${count} files.`,
+      )
+      refresh()
+    } catch (e: any) {
+      Alert.alert('Import Error', e.message)
+      setStatus('')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // ── RENDER ────────────────────────────────────────────────────────
 
   return (
-    <ScrollView style={{ padding: 20 }}>
-      <Button title="Send Repo via Bluetooth" onPress={handleSendRepo} />
-      <View style={{ height: 20 }} />
-      <Button title="Import Repo" onPress={handleImportRepo} />
-    </ScrollView>
-  );
+    <View className="flex-1 bg-[#0d1117]">
+      {/* Header */}
+      <View className="px-4 pt-6 pb-3">
+        <Text className="text-[#e6edf3] text-xl font-bold">
+          Transfer Repository
+        </Text>
+        <Text className="text-[#484f58] text-sm mt-1">
+          Export as .zip via any sharing channel, or import a .zip file
+        </Text>
+      </View>
+
+      {/* Repo picker */}
+      <View className="px-4 mb-2">
+        <Text className="text-[#8b949e] text-xs font-semibold uppercase tracking-wider mb-2">
+          Select repo to export
+        </Text>
+      </View>
+
+      <FlatList
+        data={repos}
+        keyExtractor={(item) => item.name}
+        className="max-h-52 px-4"
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            className={`flex-row items-center justify-between px-3 py-2.5 mb-1.5 rounded-lg border ${
+              selected === item.name
+                ? 'bg-[#1f6feb22] border-[#1f6feb]'
+                : 'bg-[#161b22] border-[#30363d]'
+            }`}
+            onPress={() => setSelected(item.name)}
+          >
+            <View className="flex-row items-center gap-2">
+              <Text className="text-base">📁</Text>
+              <Text className="text-[#e6edf3] text-sm font-medium">
+                {item.name}
+              </Text>
+            </View>
+            {selected === item.name && (
+              <Text className="text-[#58a6ff] text-xs">● selected</Text>
+            )}
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={
+          <Text className="text-[#484f58] text-sm text-center py-4">
+            No repositories found
+          </Text>
+        }
+      />
+
+      {/* Actions */}
+      <View className="px-4 mt-4 gap-3">
+        <TouchableOpacity
+          className={`py-3 rounded-lg items-center ${
+            selected && !busy ? 'bg-[#238636]' : 'bg-[#21262d]'
+          }`}
+          onPress={handleExport}
+          disabled={busy}
+        >
+          <Text
+            className={`font-semibold text-base ${
+              selected && !busy ? 'text-white' : 'text-[#484f58]'
+            }`}
+          >
+            📤 Export & Share .zip
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          className={`py-3 rounded-lg items-center border ${
+            busy
+              ? 'bg-[#21262d] border-[#30363d]'
+              : 'bg-[#161b22] border-[#30363d]'
+          }`}
+          onPress={handleImport}
+          disabled={busy}
+        >
+          <Text
+            className={`font-semibold text-base ${
+              busy ? 'text-[#484f58]' : 'text-[#58a6ff]'
+            }`}
+          >
+            📥 Import .zip file
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Status bar */}
+      {(busy || status) && (
+        <View className="px-4 mt-4 flex-row items-center gap-2">
+          {busy && <ActivityIndicator color="#58a6ff" size="small" />}
+          <Text className="text-[#8b949e] text-sm flex-1">{status}</Text>
+        </View>
+      )}
+    </View>
+  )
 }
