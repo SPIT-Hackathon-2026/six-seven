@@ -6,6 +6,7 @@ import {
   ScrollView,
   Alert,
   TextInput,
+  Image,
 } from 'react-native'
 
 import { getAuthor, setAuthor } from '@/services/gitService';
@@ -209,6 +210,16 @@ export default function SettingsScreen() {
             </Text>
           </View>
           <View className="rounded-lg bg-neutral-100 dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 p-4">
+            {/* Logo branding */}
+            <View className="items-center py-3 mb-3 border-b border-neutral-200 dark:border-zinc-800">
+              <Image
+                source={require('@/assets/images/logo.png')}
+                style={{ width: 140, height: 140, marginBottom: 8 }}
+                resizeMode="contain"
+              />
+              <Text className="text-black dark:text-white text-base font-bold">GitLane</Text>
+              <Text className="text-neutral-400 text-xs mt-0.5">Mobile Git Client</Text>
+            </View>
             <View className="flex-row justify-between py-1.5">
               <Text className="text-neutral-500 text-sm font-medium">App</Text>
               <Text className="text-black dark:text-white text-sm font-semibold">
@@ -230,28 +241,8 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Danger zone */}
-        <View className="mt-6">
-          <View className="flex-row items-center mb-3">
-            <AlertTriangle size={16} color="#f85149" />
-            <Text className="text-[#f85149] text-xs font-bold uppercase tracking-wider ml-2">
-              Danger Zone
-            </Text>
-          </View>
-          <View className="rounded-lg bg-red-50 dark:bg-[#160b0b] border border-[#f8514950] p-4">
-            <Text className="text-black dark:text-white text-sm mb-4 font-medium">
-              Delete all local repositories. This action cannot be undone.
-            </Text>
-            <TouchableOpacity
-              className="py-2.5 rounded-md bg-red-500 items-center"
-              onPress={handleDeleteAll}
-            >
-              <Text className="text-white text-sm font-bold">
-                Delete All Repos
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+      
+       
 
         {/* Logout Button */}
         <TouchableOpacity

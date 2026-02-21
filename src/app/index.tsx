@@ -8,6 +8,7 @@ import {
   TextInput,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { Upload, FlaskConical, Settings, Plus, Download, FolderGit2, Folder as FolderClosed, ChevronRight } from 'lucide-react-native'
@@ -191,8 +192,15 @@ export default function HomeScreen() {
 
   return (
     <View className="flex-1 bg-neutral-100 dark:bg-black w-full">
-      <View className="px-5 pt-6 pb-4 border-b border-neutral-200 dark:border-zinc-800 flex-row items-center justify-between">
-        <Text className="text-black dark:text-neutral-100 text-5xl font-extrabold">GitLane</Text>
+      <View className="px-5 pt-5 pb-4 border-b border-neutral-200 dark:border-zinc-800 flex-row items-center justify-between">
+        <View className="flex-row items-center gap-2">
+          <Image
+            source={require('@/assets/images/logo.png')}
+            style={{ width: 64, height: 64 }}
+            resizeMode="contain"
+          />
+          <Text className="text-black dark:text-neutral-100 text-2xl font-extrabold">GitLane</Text>
+        </View>
         <View className="flex-row items-center gap-3">
           <TouchableOpacity
             className="w-9 h-9 rounded-full bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 items-center justify-center"

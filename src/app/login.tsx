@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, SafeAreaView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, SafeAreaView, Image } from 'react-native';
 import { useRouter } from 'expo-router';
-import { GitBranch, Mail, Lock } from 'lucide-react-native';
+import { Mail, Lock } from 'lucide-react-native';
 import { setAuthenticated } from '@/utils/auth';
 
 export default function LoginScreen() {
@@ -28,9 +28,11 @@ export default function LoginScreen() {
     <SafeAreaView className="flex-1 bg-white dark:bg-black">
       <View className="flex-1 px-6 justify-center pb-12">
         <View className="items-center mb-10">
-          <View className="w-20 h-20 bg-neutral-100 dark:bg-zinc-900 rounded-2xl items-center justify-center border border-neutral-200 dark:border-zinc-800 mb-4">
-            <GitBranch size={40} color="#58a6ff" />
-          </View>
+          <Image
+            source={require('@/assets/images/logo.png')}
+            style={{ width: 180, height: 180, marginBottom: 16 }}
+            resizeMode="contain"
+          />
           <Text className="text-black dark:text-white text-3xl font-bold">Welcome to GitLane</Text>
           <Text className="text-neutral-500 text-base mt-2">Sign in to sync your repositories</Text>
         </View>
