@@ -135,6 +135,64 @@ export async function callSearchLLM(prompt, options = {}) {
 }
 
 /**
+ * AI Smart Merge: given conflict versions, suggest a merged resolution.
+ * Returns { merged, explanation } or null on failure.
+ *
+ * @param {string} filepath
+ * @param {string | null} ours
+ * @param {string | null} theirs
+ * @param {string | null} [base=null]
+ * @returns {Promise<{ merged: string, explanation: string } | null>}
+ */
+export async function aiSuggestMerge(filepath, ours, theirs, base = null) {
+  const ext = filepath.split('.').pop() || ''
+  const prompt = `You are an expert code merge assistant. Merge these two conflicting versions of a file intelligently.
+
+File: ${filepath}
+${base ? `\n--- BASE (common ancestor) ---\n${base.slice(0, 2000)}\n` : ''}
+--- OURS (current branch) ---
+${(ours || '').slice(0, 2000)}
+
+--- THEIRS (incoming branch) ---
+${(theirs || '').slice(0, 2000)}
+
+Rules:
+1. Produce a MERGED result that combines BOTH changes intelligently
+2. If both sides modified the same lines, keep the more complete/correct version
+3. If changes are in different areas, include BOTH
+4. Do NOT include conflict markers (<<<, ===, >>>)
+5. Preserve the original code style and formatting
+6. If one side added new code and the other didn't touch that area, include the addition
+
+Respond with ONLY this JSON format (no markdown fences):
+{
+  "merged": "...the merged file content...",
+  "explanation": "Brief 1-2 sentence explanation of what was merged and how"
+}`
+
+  const result = await callLLM(prompt, { maxTokens: 2048, temperature: 0.1 })
+  if (!result) return null
+
+  try {
+    const cleaned = result.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
+    return JSON.parse(cleaned)
+  } catch {
+    // If JSON parse fails, try to extract just the merged content
+    try {
+      const mergedMatch = result.match(/"merged"\s*:\s*"([\s\S]*?)(?:"\s*,\s*"explanation|"\s*})/)?.[1]
+      if (mergedMatch) {
+        return {
+          merged: mergedMatch.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\'),
+          explanation: 'AI merged the changes (partial parse)',
+        }
+      }
+    } catch { /* fall through */ }
+    console.warn('Failed to parse AI merge response:', result?.slice(0, 200))
+    return null
+  }
+}
+
+/**
  * Check if AI features are available (API key is set).
  */
 export function isAIAvailable() {

@@ -16,7 +16,10 @@ import {
   commit,
   stageAll,
   currentBranch,
+  resolveRef,
 } from '@/services/gitService'
+import { aiSuggestMerge, isAIAvailable } from '@/services/aiService'
+import { enqueuePush } from '@/services/offlineSyncService'
 
 /* ─────────── types ─────────── */
 type ConflictFile = {
@@ -48,6 +51,12 @@ export default function ConflictResolutionScreen() {
   const [branch, setBranch] = useState('main')
   const [editContent, setEditContent] = useState('')
   const [showEditor, setShowEditor] = useState(false)
+
+  // AI suggestion state
+  const [aiSuggestion, setAiSuggestion] = useState<{ merged: string; explanation: string } | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiDismissed, setAiDismissed] = useState(false)
+  const [aiAvailable] = useState(isAIAvailable())
 
   /* ─── load conflict versions ─── */
   useEffect(() => {
@@ -118,6 +127,46 @@ export default function ConflictResolutionScreen() {
     setShowEditor(false)
   }, [activeFile, editContent])
 
+  /* ─── AI merge suggestion ─── */
+  const handleAiSuggest = useCallback(async () => {
+    const file = files[activeFile]
+    if (!file) return
+    setAiLoading(true)
+    setAiDismissed(false)
+    setAiSuggestion(null)
+    try {
+      const result = await aiSuggestMerge(
+        file.filepath,
+        file.ours,
+        file.theirs,
+        file.base
+      )
+      if (result?.merged) {
+        setAiSuggestion(result)
+      } else {
+        Alert.alert('AI Unavailable', 'Could not generate a suggestion. Try manual merge.')
+      }
+    } catch (err: any) {
+      Alert.alert('AI Error', err?.message ?? 'Failed to get suggestion')
+    } finally {
+      setAiLoading(false)
+    }
+  }, [files, activeFile])
+
+  const applyAiSuggestion = useCallback(() => {
+    if (!aiSuggestion) return
+    setFiles((prev) => {
+      const next = [...prev]
+      next[activeFile] = {
+        ...next[activeFile],
+        strategy: 'manual',
+        resolved: aiSuggestion.merged,
+      }
+      return next
+    })
+    setAiSuggestion(null)
+  }, [activeFile, aiSuggestion])
+
   const allResolved = files.every((f) => f.resolved !== null)
 
   const handleResolveAll = useCallback(async () => {
@@ -130,10 +179,21 @@ export default function ConflictResolutionScreen() {
         }
       }
       await stageAll(name)
-      await commit(
+
+      // To make it a true merge commit, we need both parents
+      const parent1 = await resolveRef(name, branch)
+      const parent2 = await resolveRef(name, theirBranch)
+
+      const msg = `Merge ${theirBranch} into ${branch} (resolved conflicts)`
+      const oid = await commit(
         name,
-        `Merge ${theirBranch} into ${branch} (resolved conflicts)`,
+        msg,
+        { parent: [parent1, parent2] }
       )
+
+      // Automatically queue a push now that it's merged
+      await enqueuePush(name, branch, oid, msg)
+
       Alert.alert('Success', 'All conflicts resolved and committed', [
         { text: 'OK', onPress: () => router.back() },
       ])
@@ -326,7 +386,71 @@ export default function ConflictResolutionScreen() {
                     Manual Edit
                   </Text>
                 </TouchableOpacity>
+                {aiAvailable && (
+                  <TouchableOpacity
+                    className="py-3.5 rounded-xl items-center border bg-purple-50 dark:bg-[#a371f7]/10 border-[#a371f7]/40"
+                    onPress={handleAiSuggest}
+                    disabled={aiLoading}
+                  >
+                    {aiLoading ? (
+                      <View className="flex-row items-center gap-2">
+                        <ActivityIndicator size="small" color="#a371f7" />
+                        <Text className="text-[#a371f7] text-sm font-bold">AI is thinking...</Text>
+                      </View>
+                    ) : (
+                      <View className="flex-row items-center gap-2">
+                        <Text style={{ fontSize: 14 }}>✨</Text>
+                        <Text className="text-[#a371f7] text-sm font-bold">AI Smart Merge</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                )}
               </View>
+
+              {/* AI Suggestion card (dismissable) */}
+              {aiSuggestion && !aiDismissed && (
+                <View className="mb-4 rounded-xl border-2 border-[#a371f7] bg-white dark:bg-zinc-900 overflow-hidden">
+                  <View className="px-4 py-2.5 bg-purple-50 dark:bg-[#a371f7]/15 border-b border-[#a371f7]/30 flex-row items-center justify-between">
+                    <View className="flex-row items-center gap-2">
+                      <Text style={{ fontSize: 12 }}>✨</Text>
+                      <Text className="text-[#a371f7] text-[11px] font-bold uppercase tracking-wider">AI Suggestion</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => setAiDismissed(true)}>
+                      <Text className="text-neutral-400 text-xs font-bold">✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {aiSuggestion.explanation && (
+                    <View className="px-4 py-2.5 bg-purple-50/50 dark:bg-[#a371f7]/5 border-b border-neutral-100 dark:border-zinc-800">
+                      <Text className="text-neutral-600 dark:text-neutral-300 text-xs italic">
+                        {aiSuggestion.explanation}
+                      </Text>
+                    </View>
+                  )}
+                  <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
+                    <View className="p-3 bg-neutral-50 dark:bg-black">
+                      {aiSuggestion.merged.split('\n').map((line: string, i: number) => (
+                        <Text key={i} className="text-black dark:text-neutral-200 text-xs font-mono leading-relaxed">
+                          {line || ' '}
+                        </Text>
+                      ))}
+                    </View>
+                  </ScrollView>
+                  <View className="flex-row border-t border-neutral-200 dark:border-zinc-800">
+                    <TouchableOpacity
+                      className="flex-1 py-3 items-center bg-[#a371f7]/10 border-r border-neutral-200 dark:border-zinc-800"
+                      onPress={applyAiSuggestion}
+                    >
+                      <Text className="text-[#a371f7] text-sm font-bold">✓ Use This</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      className="flex-1 py-3 items-center"
+                      onPress={() => setAiDismissed(true)}
+                    >
+                      <Text className="text-neutral-500 text-sm font-medium">Dismiss</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
 
               {/* Side-by-side diff view */}
               <View className="flex-col gap-3">
