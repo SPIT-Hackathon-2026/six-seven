@@ -18,10 +18,7 @@ export default function RepoLayout() {
         name="[name]/compare"
         options={{ title: 'Compare Branches' }}
       />
-      <Stack.Screen
-        name="[name]/graph"
-        options={{ title: 'Branch Graph' }}
-      />
+      <Stack.Screen name="[name]/graph" options={{ title: 'Branch Graph' }} />
     </Stack>
   )
 }

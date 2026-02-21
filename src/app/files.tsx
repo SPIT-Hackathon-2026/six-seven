@@ -10,6 +10,7 @@ import {
   RefreshControl,
 } from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
+import { Search, FilePlus, FolderPlus, ChevronLeft, ChevronUp, ChevronDown, Folder as FolderIcon, File as FileIcon, X } from 'lucide-react-native'
 
 import { listRepos } from '@/services/repoService'
 import {
@@ -19,6 +20,8 @@ import {
   deleteFile,
   createDirectory,
   deleteDirectory,
+  searchFiles,
+  searchContent,
 } from '@/services/fileService'
 
 type TreeNode = {
@@ -46,6 +49,15 @@ export default function FilesScreen() {
   // New file/folder dialog
   const [showNew, setShowNew] = useState<'file' | 'folder' | null>(null)
   const [newName, setNewName] = useState('')
+
+  // Search state
+  const [showSearch, setShowSearch] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchMode, setSearchMode] = useState<'filename' | 'content'>(
+    'filename',
+  )
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searching, setSearching] = useState(false)
 
   // Load repos
   useFocusEffect(
@@ -177,18 +189,51 @@ export default function FilesScreen() {
     }
   }, [selectedRepo, currentDir, showNew, newName, loadDir])
 
+  const handleSearch = useCallback(async () => {
+    if (!selectedRepo || !searchQuery.trim()) return
+    setSearching(true)
+    try {
+      if (searchMode === 'filename') {
+        const results = await searchFiles(selectedRepo, searchQuery.trim())
+        setSearchResults(
+          results.map((f: any) => ({
+            path: f.path,
+            name: f.name,
+            type: 'file',
+          })),
+        )
+      } else {
+        const results = await searchContent(selectedRepo, searchQuery.trim())
+        setSearchResults(
+          results.map((m: any) => ({
+            path: m.path,
+            name: m.path.split('/').pop(),
+            line: m.line,
+            content: m.content,
+            type: 'content',
+          })),
+        )
+      }
+    } catch (err: any) {
+      Alert.alert('Search error', err?.message ?? 'Search failed')
+    } finally {
+      setSearching(false)
+    }
+  }, [selectedRepo, searchQuery, searchMode])
+
   // File editor view
   if (editingFile) {
     return (
-      <View className="flex-1 bg-[#0d1117]">
-        <View className="flex-row items-center justify-between px-5 py-3 border-b border-[#30363d]">
-          <TouchableOpacity onPress={() => setEditingFile(null)}>
-            <Text className="text-[#58a6ff] text-base font-semibold">
-              ‹ Back
+      <View className="flex-1 bg-neutral-100 dark:bg-black w-full">
+        <View className="flex-row items-center justify-between px-5 py-3 border-b border-neutral-200 dark:border-zinc-800">
+          <TouchableOpacity onPress={() => setEditingFile(null)} className="flex-row items-center">
+            <ChevronLeft size={20} color="#58a6ff" />
+            <Text className="text-[#58a6ff] text-base font-semibold ml-1">
+              Back
             </Text>
           </TouchableOpacity>
           <Text
-            className="text-[#e6edf3] text-sm font-bold flex-1 text-center"
+            className="text-black dark:text-white text-sm font-bold flex-1 text-center"
             numberOfLines={1}
           >
             {editingFile.split('/').pop()}
@@ -201,7 +246,7 @@ export default function FilesScreen() {
         </View>
         <ScrollView className="flex-1" keyboardShouldPersistTaps="always">
           <TextInput
-            className="text-[#c9d1d9] text-sm p-4 flex-1"
+            className="text-black dark:text-neutral-100 text-sm p-4 flex-1"
             style={{ fontFamily: 'monospace', minHeight: 400 }}
             value={fileContent}
             onChangeText={setFileContent}
@@ -211,57 +256,168 @@ export default function FilesScreen() {
             scrollEnabled={false}
           />
         </ScrollView>
-        <View className="px-5 py-2 border-t border-[#30363d]">
-          <Text className="text-[#484f58] text-xs">{editingFile}</Text>
+        <View className="px-5 py-2 border-t border-neutral-200 dark:border-zinc-800">
+          <Text className="text-neutral-500 text-xs">{editingFile}</Text>
         </View>
       </View>
     )
   }
 
   return (
-    <View className="flex-1 bg-[#0d1117]">
+    <View className="flex-1 bg-neutral-100 dark:bg-black w-full">
       {/* Header */}
-      <View className="flex-row items-center justify-between px-5 py-4 border-b border-[#30363d]">
-        <Text className="text-[#e6edf3] text-lg font-bold">Files</Text>
+      <View className="flex-row items-center justify-between px-5 py-4 border-b border-neutral-200 dark:border-zinc-800">
+        <Text className="text-black dark:text-white text-lg font-bold">Files</Text>
         <View className="flex-row gap-2">
           <TouchableOpacity
-            className="px-3 py-1 rounded-md bg-[#21262d]"
+            className="px-3 py-1.5 rounded-md bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 flex-row items-center gap-1.5"
+            onPress={() => {
+              setShowSearch(!showSearch)
+              setSearchResults([])
+            }}
+          >
+            <Search size={14} color="#8b949e" />
+            <Text className="text-neutral-600 dark:text-neutral-400 text-xs font-medium">Search</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            className="px-3 py-1.5 rounded-md bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 flex-row items-center gap-1.5"
             onPress={() => {
               setShowNew('file')
               setNewName('')
             }}
           >
-            <Text className="text-[#c9d1d9] text-xs">+ File</Text>
+            <FilePlus size={14} color="#8b949e" />
+            <Text className="text-neutral-600 dark:text-neutral-400 text-xs font-medium">File</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            className="px-3 py-1 rounded-md bg-[#21262d]"
+            className="px-3 py-1.5 rounded-md bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 flex-row items-center gap-1.5"
             onPress={() => {
               setShowNew('folder')
               setNewName('')
             }}
           >
-            <Text className="text-[#c9d1d9] text-xs">+ Folder</Text>
+            <FolderPlus size={14} color="#8b949e" />
+            <Text className="text-neutral-600 dark:text-neutral-400 text-xs font-medium">Folder</Text>
           </TouchableOpacity>
         </View>
       </View>
 
+      {/* Search panel */}
+      {showSearch && selectedRepo && (
+        <View className="mx-5 mt-3 mb-1 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 p-4 ">
+          <View className="flex-row gap-2 mb-3">
+            <TouchableOpacity
+              className={`px-3 py-1.5 rounded-md ${searchMode === 'filename' ? 'bg-[#1f6feb]' : 'bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800'}`}
+              onPress={() => setSearchMode('filename')}
+            >
+              <Text
+                className={`text-xs font-medium ${searchMode === 'filename' ? 'text-white' : 'text-neutral-500'}`}
+              >
+                Filename
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className={`px-3 py-1.5 rounded-md ${searchMode === 'content' ? 'bg-[#1f6feb]' : 'bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800'}`}
+              onPress={() => setSearchMode('content')}
+            >
+              <Text
+                className={`text-xs font-medium ${searchMode === 'content' ? 'text-white' : 'text-neutral-500'}`}
+              >
+                Content
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <View className="flex-row gap-2">
+            <TextInput
+              className="flex-1 bg-neutral-50 dark:bg-black text-black dark:text-white px-3 py-2 rounded-md border border-neutral-200 dark:border-zinc-800 text-sm"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder={
+                searchMode === 'filename'
+                  ? 'Search filenames…'
+                  : 'Search in file contents…'
+              }
+              placeholderTextColor="#8b949e"
+              onSubmitEditing={handleSearch}
+              autoFocus
+            />
+            <TouchableOpacity
+              className="px-4 py-2 rounded-md bg-[#1f6feb] justify-center"
+              onPress={handleSearch}
+              disabled={searching}
+            >
+              <Text className="text-white text-sm font-semibold">
+                {searching ? '...' : 'Go'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Search results */}
+          {searchResults.length > 0 && (
+            <View className="mt-2 max-h-60">
+              <ScrollView>
+                <Text className="text-[#8b949e] text-xs mb-1">
+                  {searchResults.length} result
+                  {searchResults.length !== 1 ? 's' : ''}
+                </Text>
+                {searchResults.map((r, idx) => (
+                  <TouchableOpacity
+                    key={`${r.path}-${r.line ?? idx}`}
+                    className="py-3 px-2 border-b border-neutral-100 dark:border-zinc-800"
+                    onPress={async () => {
+                      try {
+                        const content = await readFile(selectedRepo!, r.path)
+                        setFileContent(content)
+                        setEditingFile(r.path)
+                        setShowSearch(false)
+                      } catch (err: any) {
+                        Alert.alert('Error', err?.message ?? 'Cannot open file')
+                      }
+                    }}
+                  >
+                    <Text className="text-[#58a6ff] text-xs font-semibold" numberOfLines={1}>
+                      📄 {r.path}
+                      {r.line ? `:${r.line}` : ''}
+                    </Text>
+                    {r.content && (
+                      <Text
+                        className="text-[#8b949e] text-[11px] mt-0.5"
+                        numberOfLines={1}
+                        style={{ fontFamily: 'monospace' }}
+                      >
+                        {r.content}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+          {searching && (
+            <View className="mt-2 items-center">
+              <ActivityIndicator color="#58a6ff" size="small" />
+            </View>
+          )}
+        </View>
+      )}
+
       {/* Repo picker */}
       <TouchableOpacity
-        className="mx-5 mt-3 px-4 py-2.5 rounded-lg bg-[#161b22] border border-[#30363d] flex-row items-center justify-between"
+        className="mx-5 mt-3 px-4 py-3 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 flex-row items-center justify-between "
         onPress={() => setShowRepoPicker(!showRepoPicker)}
       >
-        <Text className="text-[#e6edf3] font-semibold">
+        <Text className="text-black dark:text-white font-semibold">
           {selectedRepo ?? 'Select repo'}
         </Text>
-        <Text className="text-[#8b949e]">{showRepoPicker ? '▲' : '▼'}</Text>
+        {showRepoPicker ? <ChevronUp size={16} color="#8b949e" /> : <ChevronDown size={16} color="#8b949e" />}
       </TouchableOpacity>
       {showRepoPicker && (
-        <View className="mx-5 mt-1 rounded-lg bg-[#161b22] border border-[#30363d] max-h-40">
+        <View className="mx-5 mt-1 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 max-h-40 ">
           <ScrollView>
             {repos.map((r) => (
               <TouchableOpacity
                 key={r}
-                className="px-4 py-2.5 border-b border-[#21262d]"
+                className="px-4 py-3 border-b border-neutral-100 dark:border-zinc-800"
                 onPress={() => {
                   setSelectedRepo(r)
                   setShowRepoPicker(false)
@@ -272,7 +428,7 @@ export default function FilesScreen() {
                   className={
                     r === selectedRepo
                       ? 'text-[#58a6ff] font-semibold'
-                      : 'text-[#c9d1d9]'
+                      : 'text-neutral-500'
                   }
                 >
                   {r}
@@ -285,15 +441,15 @@ export default function FilesScreen() {
 
       {/* Breadcrumbs */}
       {selectedRepo && (
-        <View className="flex-row items-center mx-5 mt-2 flex-wrap">
+        <View className="flex-row items-center mx-5 mt-3 flex-wrap bg-white dark:bg-zinc-900 px-3 py-2 rounded-lg border border-neutral-200 dark:border-zinc-800 ">
           <TouchableOpacity onPress={() => loadDir('')}>
-            <Text className="text-[#58a6ff] text-xs font-semibold">
+            <Text className="text-[#58a6ff] text-xs font-bold">
               {selectedRepo}
             </Text>
           </TouchableOpacity>
           {crumbs.map((crumb, idx) => (
             <View key={idx} className="flex-row items-center">
-              <Text className="text-[#484f58] text-xs mx-1">/</Text>
+              <Text className="text-neutral-400 text-xs mx-1.5">/</Text>
               <TouchableOpacity
                 onPress={() => loadDir(crumbs.slice(0, idx + 1).join('/'))}
               >
@@ -308,23 +464,23 @@ export default function FilesScreen() {
 
       {/* New file/folder dialog */}
       {showNew && (
-        <View className="mx-5 mt-2 rounded-lg bg-[#161b22] border border-[#30363d] p-3 flex-row items-center gap-2">
+        <View className="mx-5 mt-3 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 p-3 flex-row items-center gap-2 ">
           <TextInput
-            className="flex-1 bg-[#0d1117] text-[#e6edf3] px-3 py-1.5 rounded-md border border-[#30363d] text-sm"
+            className="flex-1 bg-neutral-50 dark:bg-black text-black dark:text-white px-3 py-2 rounded-md border border-neutral-200 dark:border-zinc-800 text-sm"
             value={newName}
             onChangeText={setNewName}
             placeholder={showNew === 'file' ? 'filename.txt' : 'folder-name'}
-            placeholderTextColor="#484f58"
+            placeholderTextColor="#8b949e"
             autoFocus
           />
           <TouchableOpacity
-            className="px-3 py-1.5 rounded-md bg-[#1f6feb]"
+            className="px-4 py-2 rounded-md bg-[#1f6feb] justify-center"
             onPress={handleCreate}
           >
-            <Text className="text-white text-sm">Create</Text>
+            <Text className="text-white text-sm font-semibold">Create</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setShowNew(null)}>
-            <Text className="text-[#8b949e] text-sm">✕</Text>
+          <TouchableOpacity onPress={() => setShowNew(null)} className="p-2">
+            <X size={18} color="#8b949e" />
           </TouchableOpacity>
         </View>
       )}
@@ -342,7 +498,7 @@ export default function FilesScreen() {
       >
         {!selectedRepo ? (
           <View className="mt-8 items-center">
-            <Text className="text-[#8b949e]">No repository selected</Text>
+            <Text className="text-neutral-500">No repository selected</Text>
           </View>
         ) : loading && tree.length === 0 ? (
           <View className="mt-8 items-center">
@@ -350,40 +506,41 @@ export default function FilesScreen() {
           </View>
         ) : tree.length === 0 ? (
           <View className="mt-8 items-center">
-            <Text className="text-[#8b949e] text-base">Empty directory</Text>
-            <Text className="text-[#484f58] text-sm mt-1">
+            <Text className="text-neutral-500 text-base">Empty directory</Text>
+            <Text className="text-neutral-400 text-sm mt-1">
               Create a file or folder to get started
             </Text>
           </View>
         ) : (
-          <>
+          <View className="bg-white dark:bg-zinc-900 rounded-xl border border-neutral-200 dark:border-zinc-800  mt-3 overflow-hidden">
             {crumbs.length > 0 && (
               <TouchableOpacity
-                className="flex-row items-center py-2.5 border-b border-[#21262d]"
+                className="flex-row items-center py-3.5 px-4 border-b border-neutral-100 dark:border-zinc-800"
                 onPress={handleBack}
               >
-                <Text className="text-[#58a6ff] text-sm">↑ ..</Text>
+                <ChevronLeft size={18} color="#58a6ff" />
+                <Text className="text-[#58a6ff] text-sm font-semibold ml-1">Up a level</Text>
               </TouchableOpacity>
             )}
-            {tree.map((node) => (
+            {tree.map((node, index) => (
               <TouchableOpacity
                 key={node.relPath}
-                className="flex-row items-center py-2.5 border-b border-[#21262d]"
+                className={`flex-row items-center py-3.5 px-4 ${index !== tree.length - 1 ? 'border-b border-neutral-100 dark:border-zinc-800' : ''}`}
                 onPress={() => handleNavigate(node)}
                 onLongPress={() => handleDeleteItem(node)}
               >
-                <Text className="mr-2 text-base">
-                  {node.isDirectory ? '📁' : '📄'}
-                </Text>
-                <Text className="text-[#c9d1d9] text-sm flex-1">
+                <View className="mr-3">
+                  {node.isDirectory ? <FolderIcon size={20} color="#58a6ff" /> : <FileIcon size={20} color="#8b949e" />}
+                </View>
+                <Text className="text-black dark:text-neutral-200 text-sm flex-1 font-medium">
                   {node.name}
                 </Text>
                 {node.isDirectory && (
-                  <Text className="text-[#484f58] text-sm">›</Text>
+                  <ChevronLeft size={16} color="#8b949e" style={{ transform: [{ rotate: '180deg'}] }} />
                 )}
               </TouchableOpacity>
             ))}
-          </>
+          </View>
         )}
       </ScrollView>
     </View>

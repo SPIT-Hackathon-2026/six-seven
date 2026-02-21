@@ -147,8 +147,8 @@ export default function ConflictResolutionScreen() {
   /* ─── guard ─── */
   if (!name || conflictPaths.length === 0) {
     return (
-      <View className="flex-1 bg-[#0d1117] items-center justify-center">
-        <Text className="text-[#e6edf3]">No conflicts to resolve</Text>
+      <View className="flex-1 bg-neutral-100 dark:bg-black items-center justify-center">
+        <Text className="text-black dark:text-neutral-100">No conflicts to resolve</Text>
         <TouchableOpacity className="mt-4" onPress={() => router.back()}>
           <Text className="text-[#58a6ff]">Go back</Text>
         </TouchableOpacity>
@@ -160,17 +160,17 @@ export default function ConflictResolutionScreen() {
 
   /* ═══════ RENDER ═══════ */
   return (
-    <View className="flex-1 bg-[#0d1117]">
+    <View className="flex-1 bg-neutral-100 dark:bg-black">
       {/* Header */}
-      <View className="flex-row items-center justify-between px-4 pt-14 pb-3 border-b border-[#30363d] bg-[#161b22]">
-        <TouchableOpacity onPress={() => router.back()} className="p-1">
+      <View className="flex-row items-center justify-between px-4 pt-14 pb-4 border-b border-neutral-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+        <TouchableOpacity onPress={() => router.back()} className="p-2">
           <Text className="text-[#58a6ff] text-2xl font-bold">‹</Text>
         </TouchableOpacity>
         <View className="flex-1 items-center">
-          <Text className="text-[#e6edf3] text-lg font-bold">
+          <Text className="text-black dark:text-neutral-100 text-lg font-bold">
             Merge Conflicts
           </Text>
-          <Text className="text-[#8b949e] text-[11px]">
+          <Text className="text-neutral-500 text-[11px] font-medium mt-1">
             {branch} ← {theirBranch}
           </Text>
         </View>
@@ -180,28 +180,28 @@ export default function ConflictResolutionScreen() {
       {loading ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator color="#58a6ff" size="large" />
-          <Text className="text-[#8b949e] mt-3 text-sm">
+          <Text className="text-neutral-500 mt-3 text-sm font-medium">
             Loading conflict details...
           </Text>
         </View>
       ) : showEditor && current ? (
         /* ─── Manual editor ─── */
         <View className="flex-1">
-          <View className="flex-row items-center justify-between px-4 py-2 bg-[#161b22] border-b border-[#30363d]">
+          <View className="flex-row items-center justify-between px-4 py-3 bg-white dark:bg-zinc-900 border-b border-neutral-200 dark:border-zinc-800 ">
             <TouchableOpacity onPress={() => setShowEditor(false)}>
-              <Text className="text-[#58a6ff] text-sm">← Cancel</Text>
+              <Text className="text-[#58a6ff] text-sm font-semibold">Cancel</Text>
             </TouchableOpacity>
-            <Text className="text-[#e6edf3] text-sm" numberOfLines={1}>
+            <Text className="text-black dark:text-neutral-100 text-sm font-bold mx-4" numberOfLines={1}>
               {current.filepath}
             </Text>
             <TouchableOpacity onPress={applyManualEdit}>
-              <Text className="text-[#7ee787] text-sm font-semibold">
+              <Text className="text-[#7ee787] text-sm font-bold tracking-wide">
                 Apply
               </Text>
             </TouchableOpacity>
           </View>
           <TextInput
-            className="flex-1 bg-[#0d1117] text-[#e6edf3] p-4 font-mono text-xs"
+            className="flex-1 bg-white dark:bg-black text-black dark:text-neutral-200 p-5 font-mono text-[13px] leading-relaxed"
             value={editContent}
             onChangeText={setEditContent}
             multiline
@@ -218,26 +218,26 @@ export default function ConflictResolutionScreen() {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            className="border-b border-[#30363d]"
+            className="border-b border-neutral-200 dark:border-zinc-800 bg-white dark:bg-zinc-900"
           >
-            <View className="flex-row px-2 py-2 gap-1">
+            <View className="flex-row px-4 py-3 gap-2">
               {files.map((f, idx) => (
                 <TouchableOpacity
                   key={f.filepath}
-                  className={`px-3 py-1.5 rounded-md ${idx === activeFile ? 'bg-[#21262d] border border-[#30363d]' : ''}`}
+                  className={`px-4 py-2 rounded-lg ${idx === activeFile ? 'bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-700 ' : 'bg-transparent border border-transparent'}`}
                   onPress={() => setActiveFile(idx)}
                 >
-                  <View className="flex-row items-center gap-1.5">
+                  <View className="flex-row items-center gap-2">
                     {f.resolved !== null ? (
-                      <Text className="text-[#7ee787] text-xs">✓</Text>
+                      <Text className="text-[#7ee787] text-sm font-bold">✓</Text>
                     ) : (
-                      <Text className="text-[#f85149] text-xs">●</Text>
+                      <View className="w-2 h-2 rounded-full bg-[#f85149]" />
                     )}
                     <Text
                       className={
                         idx === activeFile
-                          ? 'text-[#e6edf3] text-xs'
-                          : 'text-[#8b949e] text-xs'
+                          ? 'text-black dark:text-white text-[13px] font-bold'
+                          : 'text-neutral-500 text-[13px] font-medium'
                       }
                       numberOfLines={1}
                     >
@@ -250,21 +250,21 @@ export default function ConflictResolutionScreen() {
           </ScrollView>
 
           {/* Progress bar */}
-          <View className="px-4 mt-3">
-            <View className="flex-row items-center justify-between mb-1">
-              <Text className="text-[#8b949e] text-xs">
+          <View className="px-5 mt-5">
+            <View className="flex-row items-center justify-between mb-2">
+              <Text className="text-neutral-500 text-xs font-bold uppercase tracking-wider">
                 {files.filter((f) => f.resolved !== null).length} /{' '}
                 {files.length} resolved
               </Text>
               <Text
-                className={`text-xs ${allResolved ? 'text-[#7ee787]' : 'text-[#d29922]'}`}
+                className={`text-xs font-bold tracking-wide uppercase ${allResolved ? 'text-[#7ee787]' : 'text-[#d29922]'}`}
               >
                 {allResolved ? 'All resolved ✓' : 'Pending...'}
               </Text>
             </View>
-            <View className="h-1.5 rounded-full bg-[#21262d] overflow-hidden">
+            <View className="h-2 rounded-full bg-neutral-200 dark:bg-zinc-800 overflow-hidden">
               <View
-                className="h-full rounded-full bg-[#238636]"
+                className="h-full rounded-full bg-[#1f6feb]"
                 style={{
                   width: `${(files.filter((f) => f.resolved !== null).length / files.length) * 100}%`,
                 }}
@@ -273,77 +273,78 @@ export default function ConflictResolutionScreen() {
           </View>
 
           {current && (
-            <View className="px-4 mt-3">
+            <View className="px-5 mt-5">
               {/* File path */}
-              <Text className="text-[#e6edf3] text-sm font-semibold mb-3">
+              <Text className="text-black dark:text-neutral-100 text-sm font-bold mb-4">
                 {current.filepath}
               </Text>
 
               {/* Strategy buttons */}
-              <View className="flex-row gap-2 mb-3">
+              <View className="flex-col gap-3 mb-5">
+                <View className="flex-row gap-3">
+                  <TouchableOpacity
+                    className={`flex-1 py-3.5 rounded-xl items-center border  ${
+                      current.strategy === 'ours'
+                        ? 'bg-blue-50 dark:bg-[#1f6feb]/20 border-[#1f6feb]'
+                        : 'bg-white dark:bg-zinc-900 border-neutral-200 dark:border-zinc-800'
+                    }`}
+                    onPress={() => chooseStrategy(activeFile, 'ours')}
+                  >
+                    <Text className={`text-sm font-bold ${current.strategy === 'ours' ? 'text-[#1f6feb] dark:text-[#58a6ff]' : 'text-neutral-700 dark:text-neutral-300'}`}>
+                      Accept Ours
+                    </Text>
+                    <Text className={`text-[10px] uppercase tracking-wide mt-1 ${current.strategy === 'ours' ? 'text-[#1f6feb]/80 dark:text-[#58a6ff]/80' : 'text-neutral-400 font-bold'}`}>{branch}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className={`flex-1 py-3.5 rounded-xl items-center border  ${
+                      current.strategy === 'theirs'
+                        ? 'bg-green-50 dark:bg-[#238636]/20 border-[#238636]'
+                        : 'bg-white dark:bg-zinc-900 border-neutral-200 dark:border-zinc-800'
+                    }`}
+                    onPress={() => chooseStrategy(activeFile, 'theirs')}
+                  >
+                    <Text className={`text-sm font-bold ${current.strategy === 'theirs' ? 'text-[#238636] dark:text-[#7ee787]' : 'text-neutral-700 dark:text-neutral-300'}`}>
+                      Accept Theirs
+                    </Text>
+                    <Text className={`text-[10px] uppercase tracking-wide mt-1 ${current.strategy === 'theirs' ? 'text-[#238636]/80 dark:text-[#7ee787]/80' : 'text-neutral-400 font-bold'}`}>
+                      {theirBranch}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
                 <TouchableOpacity
-                  className={`flex-1 py-2.5 rounded-lg items-center border ${
-                    current.strategy === 'ours'
-                      ? 'bg-[#1f6feb33] border-[#1f6feb]'
-                      : 'bg-[#21262d] border-[#30363d]'
-                  }`}
-                  onPress={() => chooseStrategy(activeFile, 'ours')}
-                >
-                  <Text className="text-[#58a6ff] text-sm font-semibold">
-                    Accept Ours
-                  </Text>
-                  <Text className="text-[#8b949e] text-[10px]">{branch}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  className={`flex-1 py-2.5 rounded-lg items-center border ${
-                    current.strategy === 'theirs'
-                      ? 'bg-[#238636]33 border-[#238636]'
-                      : 'bg-[#21262d] border-[#30363d]'
-                  }`}
-                  onPress={() => chooseStrategy(activeFile, 'theirs')}
-                >
-                  <Text className="text-[#7ee787] text-sm font-semibold">
-                    Accept Theirs
-                  </Text>
-                  <Text className="text-[#8b949e] text-[10px]">
-                    {theirBranch}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  className={`flex-1 py-2.5 rounded-lg items-center border ${
+                  className={`py-3.5 rounded-xl items-center border  ${
                     current.strategy === 'manual'
-                      ? 'bg-[#d29922]33 border-[#d29922]'
-                      : 'bg-[#21262d] border-[#30363d]'
+                      ? 'bg-yellow-50 dark:bg-[#d29922]/20 border-[#d29922]'
+                      : 'bg-white dark:bg-zinc-900 border-neutral-200 dark:border-zinc-800'
                   }`}
                   onPress={() => {
                     setEditContent(current.ours ?? current.theirs ?? '')
                     setShowEditor(true)
                   }}
                 >
-                  <Text className="text-[#d29922] text-sm font-semibold">
-                    Edit
+                  <Text className={`text-sm font-bold ${current.strategy === 'manual' ? 'text-[#d29922]' : 'text-neutral-700 dark:text-neutral-300'}`}>
+                    Manual Edit
                   </Text>
-                  <Text className="text-[#8b949e] text-[10px]">Manual</Text>
                 </TouchableOpacity>
               </View>
 
               {/* Side-by-side diff view */}
-              <View className="flex-row gap-2">
+              <View className="flex-col gap-3">
                 {/* Ours */}
-                <View className="flex-1 rounded-lg bg-[#161b22] border border-[#30363d] overflow-hidden">
-                  <View className="px-2 py-1.5 bg-[#1f6feb22] border-b border-[#30363d]">
-                    <Text className="text-[#58a6ff] text-[11px] font-semibold">
+                <View className="rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden ">
+                  <View className="px-4 py-2 bg-blue-50 dark:bg-[#1f6feb]/10 border-b border-neutral-200 dark:border-zinc-800">
+                    <Text className="text-[#1f6feb] dark:text-[#58a6ff] text-[11px] font-bold uppercase tracking-wider">
                       Ours ({branch})
                     </Text>
                   </View>
-                  <ScrollView style={{ maxHeight: 250 }} nestedScrollEnabled>
-                    <View className="p-2">
+                  <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
+                    <View className="p-3 bg-neutral-50 dark:bg-black">
                       {(current.ours ?? '(empty)')
                         .split('\n')
                         .map((line, i) => (
                           <Text
                             key={i}
-                            className="text-[#e6edf3] text-[10px] font-mono"
+                            className="text-black dark:text-neutral-200 text-xs font-mono leading-relaxed"
                           >
                             {line || ' '}
                           </Text>
@@ -353,20 +354,20 @@ export default function ConflictResolutionScreen() {
                 </View>
 
                 {/* Theirs */}
-                <View className="flex-1 rounded-lg bg-[#161b22] border border-[#30363d] overflow-hidden">
-                  <View className="px-2 py-1.5 bg-[#238636]22 border-b border-[#30363d]">
-                    <Text className="text-[#7ee787] text-[11px] font-semibold">
+                <View className="rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden ">
+                  <View className="px-4 py-2 bg-green-50 dark:bg-[#238636]/10 border-b border-neutral-200 dark:border-zinc-800">
+                    <Text className="text-[#238636] dark:text-[#7ee787] text-[11px] font-bold uppercase tracking-wider">
                       Theirs ({theirBranch})
                     </Text>
                   </View>
-                  <ScrollView style={{ maxHeight: 250 }} nestedScrollEnabled>
-                    <View className="p-2">
+                  <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
+                    <View className="p-3 bg-neutral-50 dark:bg-black">
                       {(current.theirs ?? '(empty)')
                         .split('\n')
                         .map((line, i) => (
                           <Text
                             key={i}
-                            className="text-[#e6edf3] text-[10px] font-mono"
+                            className="text-black dark:text-neutral-200 text-xs font-mono leading-relaxed"
                           >
                             {line || ' '}
                           </Text>
@@ -378,18 +379,18 @@ export default function ConflictResolutionScreen() {
 
               {/* Base version (collapsible) */}
               {current.base && (
-                <View className="mt-3 rounded-lg bg-[#161b22] border border-[#30363d] overflow-hidden">
-                  <View className="px-2 py-1.5 bg-[#21262d] border-b border-[#30363d]">
-                    <Text className="text-[#8b949e] text-[11px] font-semibold">
+                <View className="mt-4 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden ">
+                  <View className="px-4 py-2 bg-neutral-100 dark:bg-black border-b border-neutral-200 dark:border-zinc-800">
+                    <Text className="text-neutral-500 text-[11px] font-bold uppercase tracking-wider">
                       Base (common ancestor)
                     </Text>
                   </View>
                   <ScrollView style={{ maxHeight: 150 }} nestedScrollEnabled>
-                    <View className="p-2">
+                    <View className="p-3 bg-neutral-50 dark:bg-black">
                       {current.base.split('\n').map((line, i) => (
                         <Text
                           key={i}
-                          className="text-[#8b949e] text-[10px] font-mono"
+                          className="text-neutral-500 dark:text-neutral-400 text-xs font-mono leading-relaxed"
                         >
                           {line || ' '}
                         </Text>
@@ -401,18 +402,18 @@ export default function ConflictResolutionScreen() {
 
               {/* Resolution preview */}
               {current.resolved !== null && (
-                <View className="mt-3 rounded-lg bg-[#0d1117] border border-[#238636] overflow-hidden">
-                  <View className="px-2 py-1.5 bg-[#238636]22 border-b border-[#238636]">
-                    <Text className="text-[#7ee787] text-[11px] font-semibold">
+                <View className="mt-4 rounded-xl bg-white dark:bg-zinc-900 border-2 border-[#238636] overflow-hidden ">
+                  <View className="px-4 py-2 bg-green-50 dark:bg-[#238636]/20 border-b border-[#238636]/30">
+                    <Text className="text-[#238636] dark:text-[#7ee787] text-[11px] font-bold uppercase tracking-wider">
                       ✓ Resolved ({current.strategy})
                     </Text>
                   </View>
-                  <ScrollView style={{ maxHeight: 150 }} nestedScrollEnabled>
-                    <View className="p-2">
+                  <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
+                    <View className="p-3 bg-neutral-50 dark:bg-black">
                       {current.resolved.split('\n').map((line, i) => (
                         <Text
                           key={i}
-                          className="text-[#e6edf3] text-[10px] font-mono"
+                          className="text-black dark:text-neutral-200 text-xs font-mono leading-relaxed"
                         >
                           {line || ' '}
                         </Text>
@@ -425,9 +426,9 @@ export default function ConflictResolutionScreen() {
           )}
 
           {/* Commit button */}
-          <View className="px-4 mt-4">
+          <View className="px-5 mt-6 border-t border-neutral-200 dark:border-zinc-800/50 pt-6">
             <TouchableOpacity
-              className={`py-3 rounded-lg items-center ${allResolved ? 'bg-[#238636]' : 'bg-[#21262d]'}`}
+              className={`py-4 rounded-xl items-center  ${allResolved ? 'bg-[#1f6feb]' : 'bg-neutral-200 dark:bg-zinc-800'}`}
               onPress={handleResolveAll}
               disabled={!allResolved || resolving}
             >
@@ -435,7 +436,7 @@ export default function ConflictResolutionScreen() {
                 <ActivityIndicator color="#fff" size="small" />
               ) : (
                 <Text
-                  className={`text-sm font-semibold ${allResolved ? 'text-white' : 'text-[#484f58]'}`}
+                  className={`text-sm font-bold tracking-wide ${allResolved ? 'text-white' : 'text-neutral-500'}`}
                 >
                   {allResolved
                     ? 'Resolve All & Commit'

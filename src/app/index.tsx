@@ -10,6 +10,7 @@ import {
   RefreshControl,
 } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
+import { Upload, FlaskConical, Settings, Plus, Download, FolderGit2, Folder as FolderClosed, ChevronRight } from 'lucide-react-native'
 
 import {
   currentBranch,
@@ -189,61 +190,63 @@ export default function HomeScreen() {
   )
 
   return (
-    <View className="flex-1 bg-[#050b16]">
-      <View className="px-5 pt-6 pb-4 border-b border-[#161b22] flex-row items-center justify-between">
-        <Text className="text-[#f0f6fc] text-5xl font-extrabold">GitLane</Text>
+    <View className="flex-1 bg-neutral-100 dark:bg-black w-full">
+      <View className="px-5 pt-6 pb-4 border-b border-neutral-200 dark:border-zinc-800 flex-row items-center justify-between">
+        <Text className="text-black dark:text-neutral-100 text-5xl font-extrabold">GitLane</Text>
         <View className="flex-row items-center gap-3">
           <TouchableOpacity
-            className="w-9 h-9 rounded-full border border-[#30363d] items-center justify-center"
+            className="w-9 h-9 rounded-full bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 items-center justify-center"
             onPress={() => router.push('/transfer')}
           >
-            <Text className="text-[#c9d1d9] text-lg">📤</Text>
+            <Upload size={18} color="#8b949e" strokeWidth={2.5} />
           </TouchableOpacity>
           <TouchableOpacity
-            className="w-9 h-9 rounded-full border border-[#30363d] items-center justify-center"
+            className="w-9 h-9 rounded-full bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 items-center justify-center"
             onPress={() => router.push('/testing')}
           >
-            <Text className="text-[#c9d1d9] text-lg">🧪</Text>
+            <FlaskConical size={18} color="#8b949e" strokeWidth={2.5} />
           </TouchableOpacity>
           <TouchableOpacity
-            className="w-9 h-9 rounded-full border border-[#30363d] items-center justify-center"
+            className="w-9 h-9 rounded-full bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 items-center justify-center"
             onPress={() => router.push('/settings')}
           >
-            <Text className="text-[#c9d1d9] text-lg">⚙</Text>
+            <Settings size={18} color="#8b949e" strokeWidth={2.5} />
           </TouchableOpacity>
         </View>
       </View>
 
       <View className="px-5 pt-4 flex-row gap-3">
         <TouchableOpacity
-          className="flex-1 py-3 rounded-xl bg-[#21262d] items-center"
+          className="flex-1 py-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 flex-row justify-center gap-2 items-center"
           onPress={() => {
             setShowInitDialog(true)
             setInitName('')
           }}
         >
-          <Text className="text-[#f0f6fc] text-lg font-bold">+ Init</Text>
+          <Plus size={20} color="#8b949e" />
+          <Text className="text-black dark:text-neutral-100 text-base font-bold">Init</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          className="flex-1 py-3 rounded-xl bg-[#21262d] items-center"
+          className="flex-1 py-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 flex-row justify-center gap-2 items-center"
           onPress={() => router.push('/transfer')}
         >
-          <Text className="text-[#f0f6fc] text-lg font-bold">Import</Text>
+          <Download size={20} color="#8b949e" />
+          <Text className="text-black dark:text-neutral-100 text-base font-bold">Import</Text>
         </TouchableOpacity>
       </View>
 
       {/* Init repo dialog */}
       {showInitDialog && (
-        <View className="mx-5 mt-3 rounded-xl bg-[#161b22] border border-[#30363d] p-4">
-          <Text className="text-[#e6edf3] text-sm font-semibold mb-2">
+        <View className="mx-5 mt-3 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 p-4  relative z-50">
+          <Text className="text-neutral-900 dark:text-white text-sm font-semibold mb-2">
             New Repository
           </Text>
           <TextInput
-            className="bg-[#0d1117] text-[#e6edf3] px-3 py-2 rounded-md border border-[#30363d] text-sm"
+            className="bg-neutral-50 dark:bg-black text-black dark:text-white px-3 py-2 rounded-md border border-neutral-200 dark:border-zinc-800 text-sm"
             value={initName}
             onChangeText={setInitName}
             placeholder="repository-name"
-            placeholderTextColor="#484f58"
+            placeholderTextColor="#8b949e"
             autoFocus
           />
           <View className="flex-row gap-2 mt-3">
@@ -254,10 +257,10 @@ export default function HomeScreen() {
               <Text className="text-white text-sm font-semibold">Create</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              className="py-2 px-4 rounded-md bg-[#21262d] items-center"
+              className="py-2 px-4 rounded-md bg-neutral-100 dark:bg-zinc-900 items-center justify-center border border-neutral-200 dark:border-zinc-800"
               onPress={() => setShowInitDialog(false)}
             >
-              <Text className="text-[#c9d1d9] text-sm">Cancel</Text>
+              <Text className="text-neutral-500 text-sm">Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -265,16 +268,16 @@ export default function HomeScreen() {
 
       {/* Duplicate dialog */}
       {showDupDialog && (
-        <View className="mx-5 mt-3 rounded-xl bg-[#161b22] border border-[#30363d] p-4">
-          <Text className="text-[#e6edf3] text-sm font-semibold mb-2">
+        <View className="mx-5 mt-3 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 p-4  relative z-50">
+          <Text className="text-neutral-900 dark:text-white text-sm font-semibold mb-2">
             Duplicate "{showDupDialog}"
           </Text>
           <TextInput
-            className="bg-[#0d1117] text-[#e6edf3] px-3 py-2 rounded-md border border-[#30363d] text-sm"
+            className="bg-neutral-50 dark:bg-black text-black dark:text-white px-3 py-2 rounded-md border border-neutral-200 dark:border-zinc-800 text-sm"
             value={dupName}
             onChangeText={setDupName}
             placeholder="new-repo-name"
-            placeholderTextColor="#484f58"
+            placeholderTextColor="#8b949e"
             autoFocus
           />
           <View className="flex-row gap-2 mt-3">
@@ -287,16 +290,16 @@ export default function HomeScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              className="py-2 px-4 rounded-md bg-[#21262d] items-center"
+              className="py-2 px-4 rounded-md bg-neutral-100 dark:bg-zinc-900 items-center justify-center border border-neutral-200 dark:border-zinc-800"
               onPress={() => setShowDupDialog(null)}
             >
-              <Text className="text-[#c9d1d9] text-sm">Cancel</Text>
+              <Text className="text-neutral-500 text-sm">Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
 
-      <Text className="px-5 pt-3 text-[#8b949e] text-xs uppercase tracking-wider">
+      <Text className="px-5 pt-3 text-neutral-500 text-xs uppercase tracking-wider">
         Repositories · {repoCountLabel}
       </Text>
 
@@ -312,15 +315,15 @@ export default function HomeScreen() {
         }
       >
         {loading && repos.length === 0 ? (
-          <View className="mt-3 rounded-2xl border border-[#30363d] bg-[#111827] p-4">
-            <Text className="text-[#8b949e]">Loading repositories…</Text>
+          <View className="mt-3 rounded-2xl border border-neutral-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 ">
+            <Text className="text-neutral-500">Loading repositories…</Text>
           </View>
         ) : repos.length === 0 ? (
-          <View className="mt-3 rounded-2xl border border-[#30363d] bg-[#111827] p-4">
-            <Text className="text-[#e6edf3] text-base font-semibold">
+          <View className="mt-3 rounded-2xl border border-neutral-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 ">
+            <Text className="text-black dark:text-neutral-100 text-base font-semibold">
               No repositories yet
             </Text>
-            <Text className="text-[#8b949e] mt-1">
+            <Text className="text-neutral-500 mt-1">
               Use + Init or Import to get started.
             </Text>
           </View>
@@ -328,7 +331,7 @@ export default function HomeScreen() {
           repos.map((repo) => (
             <TouchableOpacity
               key={repo.name}
-              className="mt-3 rounded-2xl border border-[#30363d] bg-[#111827] p-4 active:bg-[#1c2333]"
+              className="mt-3 rounded-2xl border border-neutral-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 active:bg-neutral-50 active:dark:bg-zinc-800 "
               onPress={() =>
                 router.push({
                   pathname: '/repo/[name]',
@@ -338,30 +341,33 @@ export default function HomeScreen() {
               onLongPress={() => showRepoActions(repo.name)}
             >
               <View className="flex-row items-center justify-between">
-                <View className="flex-row items-center gap-2">
-                  <Text className="text-[#c9d1d9] text-lg">
-                    {repo.isGitRepo ? '📁' : '📂'}
-                  </Text>
-                  <Text className="text-[#f0f6fc] text-[28px] font-extrabold">
+                <View className="flex-row items-center gap-3">
+                  <View className="w-10 h-10 rounded-lg bg-neutral-100 dark:bg-black items-center justify-center">
+                    {repo.isGitRepo ? (
+                      <FolderGit2 size={24} color="#58a6ff" />
+                    ) : (
+                      <FolderClosed size={24} color="#8b949e" />
+                    )}
+                  </View>
+                  <Text className="text-black dark:text-white text-2xl font-bold">
                     {repo.name}
                   </Text>
                 </View>
-                <Text className="text-[#8b949e] text-xl">›</Text>
+                <ChevronRight size={24} color="#8b949e" />
               </View>
 
-              <Text className="text-[#c9d1d9] text-2xl mt-2 font-semibold">
-                Branch: {repo.branch}
+              <Text className="text-neutral-500 text-sm mt-3 font-semibold">
+                Branch: <Text className="text-black dark:text-neutral-100 font-bold">{repo.branch}</Text>
               </Text>
 
-              <View className="flex-row items-center mt-2">
+              <View className="flex-row items-center mt-2 border-t border-neutral-100 dark:border-zinc-800 pt-3">
                 <Text
                   style={{ color: repo.statusColor }}
-                  className="text-2xl font-semibold"
+                  className="text-sm font-semibold mr-2"
                 >
-                  {repo.statusText}
+                  ● {repo.statusText}
                 </Text>
-                <Text className="text-[#8b949e] text-2xl">
-                  {' '}
+                <Text className="text-neutral-400 text-sm">
                   · {repo.sizeText} · {repo.ageText}
                 </Text>
               </View>
