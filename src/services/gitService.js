@@ -1,7 +1,7 @@
 import * as git from 'isomorphic-git'
 import { fs } from '../utils/fsAdapter'
 import { createRepoFolder, getRepoPath } from './repoService'
-import RNFS from 'react-native-fs'
+import * as FileSystem from 'expo-file-system/legacy'
 
 // =====================================================================
 //  CONFIG
@@ -646,15 +646,16 @@ export async function checkRepoHealth(repoName) {
 
 /** Recursively copy a directory. */
 async function copyDirectory(src, dest) {
-  await fs.promises.mkdir(dest, { recursive: true })
-  const entries = await RNFS.readDir(src)
-  for (const entry of entries) {
-    const srcPath = entry.path
-    const destPath = `${dest}/${entry.name}`
-    if (entry.isDirectory()) {
+  await FileSystem.makeDirectoryAsync(dest, { intermediates: true })
+  const names = await FileSystem.readDirectoryAsync(src)
+  for (const name of names) {
+    const srcPath = `${src}/${name}`
+    const destPath = `${dest}/${name}`
+    const info = await FileSystem.getInfoAsync(srcPath)
+    if (info.isDirectory) {
       await copyDirectory(srcPath, destPath)
     } else {
-      await RNFS.copyFile(srcPath, destPath)
+      await FileSystem.copyAsync({ from: srcPath, to: destPath })
     }
   }
 }
