@@ -17,6 +17,7 @@ import * as FileSystem from 'expo-file-system/legacy'
 import { getRepoPath } from './repoService'
 import * as git from 'isomorphic-git'
 import { fs } from '../utils/fsAdapter'
+import { atomicWriteJson, safeReadJson } from './safeWriteService'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -45,19 +46,11 @@ function manifestPath(repoName) {
 }
 
 async function readManifest(repoName) {
-  try {
-    const raw = await FileSystem.readAsStringAsync(manifestPath(repoName))
-    return JSON.parse(raw)
-  } catch {
-    return { totalSize: 0, files: {} }
-  }
+  return safeReadJson(manifestPath(repoName), { totalSize: 0, files: {} })
 }
 
 async function writeManifest(repoName, manifest) {
-  await FileSystem.writeAsStringAsync(
-    manifestPath(repoName),
-    JSON.stringify(manifest),
-  )
+  await atomicWriteJson(manifestPath(repoName), manifest)
 }
 
 // ── Loose object size pre-check ──────────────────────────────────────────────

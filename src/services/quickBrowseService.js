@@ -17,6 +17,7 @@
 
 import * as FileSystem from 'expo-file-system/legacy'
 import { getRepoPath, createRepoFolder } from './repoService'
+import { atomicWriteJson, safeReadJson } from './safeWriteService'
 
 const MARKER_NAME = '.quick_browse.json'
 const BASE_URL = 'https://api.github.com'
@@ -60,16 +61,11 @@ function markerPath(repoName) {
 }
 
 async function readMarker(repoName) {
-  try {
-    const raw = await FileSystem.readAsStringAsync(markerPath(repoName))
-    return JSON.parse(raw)
-  } catch {
-    return null
-  }
+  return safeReadJson(markerPath(repoName), null)
 }
 
 async function writeMarker(repoName, data) {
-  await FileSystem.writeAsStringAsync(markerPath(repoName), JSON.stringify(data))
+  await atomicWriteJson(markerPath(repoName), data)
 }
 
 // ── Public: detect ───────────────────────────────────────────────────────────

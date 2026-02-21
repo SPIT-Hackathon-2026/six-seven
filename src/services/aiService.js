@@ -9,6 +9,7 @@
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions'
 const MODEL = 'openai/gpt-oss-120b'
+const COMMIT_MODEL = 'llama-3.3-70b-versatile'  // reliable model for short text generation
 
 function getApiKey() {
   return process.env.EXPO_PUBLIC_GROQ_API_KEY || null
@@ -48,6 +49,43 @@ async function callLLM(prompt, { maxTokens = 512, temperature = 0.3 } = {}) {
     console.warn('Groq API call failed:', err?.message)
     return null
   }
+}
+
+/**
+ * Like callLLM but throws on failure so the caller gets a real error message.
+ */
+async function callLLMOrThrow(prompt, opts = {}) {
+  const apiKey = getApiKey()
+  if (!apiKey) throw new Error('GROQ API key not set. Add EXPO_PUBLIC_GROQ_API_KEY to your .env and restart Expo with --clear.')
+
+  const { maxTokens = 512, temperature = 0.3, model = MODEL } = opts
+  const res = await fetch(GROQ_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: maxTokens,
+      temperature,
+    }),
+  })
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`Groq API ${res.status}: ${body.slice(0, 200)}`)
+  }
+
+  const data = await res.json()
+  const choice = data?.choices?.[0]
+  const content = choice?.message?.content ?? choice?.text
+  if (!content) {
+    const reason = choice?.finish_reason ?? 'unknown'
+    throw new Error(`Groq returned an empty response (finish_reason: ${reason})`)
+  }
+  return content
 }
 
 /**
@@ -197,4 +235,45 @@ Respond with ONLY this JSON format (no markdown fences):
  */
 export function isAIAvailable() {
   return !!getApiKey()
+}
+
+/**
+ * Generate a concise, conventional commit message from a git diff.
+ *
+ * @param {string} diff          - Output of `git diff --staged` (or diff summary)
+ * @param {string[]} [files]     - Optional list of changed file paths for context
+ * @returns {Promise<string|null>} Commit message or null if AI unavailable
+ */
+export async function generateCommitMessage(diff, files = []) {
+  const fileList = files.length
+    ? `Changed files:\n${files.map(f => `  - ${f}`).join('\n')}\n\n`
+    : ''
+
+  const truncatedDiff = diff.length > 4000
+    ? diff.slice(0, 4000) + '\n... (diff truncated)'
+    : diff
+
+  const prompt = `You are an expert developer who writes excellent Git commit messages following the Conventional Commits spec.
+
+${fileList}Here is the git diff:
+\`\`\`diff
+${truncatedDiff}
+\`\`\`
+
+Write a commit message following these rules:
+1. First line: type(scope): short summary — max 72 chars
+   Types: feat, fix, refactor, chore, docs, style, test, perf
+2. Optionally add 2-4 bullet points for complex changes
+3. Be specific and technical — mention what changed and why
+4. Do NOT wrap in markdown fences
+5. Respond with ONLY the commit message, nothing else
+
+Example good messages:
+feat(editor): add lazy file loading with LRU cache eviction
+fix(git): prevent index corruption on crash with atomic writes
+refactor(auth): extract token refresh into separate service`
+
+  // Use llama-3.3-70b which reliably generates short commit messages
+  const result = await callLLMOrThrow(prompt, { maxTokens: 300, temperature: 0.4, model: COMMIT_MODEL })
+  return result.trim()
 }

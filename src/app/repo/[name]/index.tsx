@@ -84,8 +84,10 @@ import {
 import { deleteRepo, getRepoSize } from '@/services/repoService';
 import { stash, stashPop } from '@/services/stashService';
 import { isOnline } from '@/services/networkService';
+import { generateCommitMessage, isAIAvailable } from '@/services/aiService';
 import { enqueuePush, syncRepo } from '@/services/offlineSyncService';
 import { isGitHubLinked, createGitHubRepo, getCachedUsername, listCollaborators, addCollaborator } from '@/services/githubAuth';
+import { withGitLock, checkStaleLock, clearStaleLock, detectGitHealthIssues } from '@/services/safeWriteService';
 import SyntaxHighlighter from '@/components/SyntaxHighlighter';
 
 /* ───────────────── helpers ───────────────── */
@@ -254,6 +256,7 @@ export default function RepoDetailScreen() {
 
   /* — Overview tab — */
   const [commitMsg, setCommitMsg] = useState('')
+  const [generatingMsg, setGeneratingMsg] = useState(false)
   const [committing, setCommitting] = useState(false)
   const [remoteUrl, setRemoteUrl] = useState<string | null>(null)
   const [syncing, setSyncing] = useState<'push' | 'pull' | 'fetch' | null>(null)
@@ -333,6 +336,22 @@ export default function RepoDetailScreen() {
         setRepoSize('0 B')
         setLoading(false)
         return
+      }
+
+      // ── Stale lock check (left by a previous crash) ─────────────────────
+      const staleLock = await checkStaleLock(name)
+      if (staleLock) {
+        const issues = await detectGitHealthIssues(name)
+        const detail = issues.length
+          ? issues.map(i => i.description).join('\n')
+          : `The app may have crashed during a "${staleLock.operation}" operation.`
+        Alert.alert(
+          '⚠️ Possible Corruption Detected',
+          `${detail}\n\nYour working files are safe. The repository may need cleanup.`,
+          [
+            { text: 'Dismiss', onPress: () => clearStaleLock(name) },
+          ],
+        )
       }
       const [br, brs, status, log, tgs, size] = await Promise.all([
         currentBranch(name).catch(() => 'main'),
@@ -447,8 +466,10 @@ export default function RepoDetailScreen() {
     const msg = commitMsg.trim() || `Update ${new Date().toLocaleTimeString()}`
     setCommitting(true)
     try {
-      await stageAll(name)
-      await commitAll(name, msg)
+      await withGitLock(name, 'commit', async () => {
+        await stageAll(name)
+        await commitAll(name, msg)
+      })
 
       // Auto-enqueue push if remote exists
       if (remoteUrl && ghLinked) {
@@ -468,6 +489,24 @@ export default function RepoDetailScreen() {
       setCommitting(false)
     }
   }, [name, commitMsg, branch, remoteUrl, ghLinked, loadRepoData])
+
+  const handleGenerateCommitMsg = useCallback(async () => {
+    if (!name) return
+    setGeneratingMsg(true)
+    try {
+      // Build a lightweight diff description from the changed files list
+      const filePaths = modFiles.map(f => f.filepath)
+      const diffText = modFiles
+        .map(f => `${f.status === 'added' ? 'A' : f.status === 'deleted' ? 'D' : 'M'} ${f.filepath}`)
+        .join('\n')
+      const msg = await generateCommitMessage(diffText, filePaths)
+      setCommitMsg(msg ?? '')
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to generate commit message')
+    } finally {
+      setGeneratingMsg(false)
+    }
+  }, [name, modFiles])
 
   const handlePush = useCallback(async () => {
     if (!name) return
@@ -1760,14 +1799,36 @@ export default function RepoDetailScreen() {
               </View>
             )}
 
-            {/* Commit message */}
-            <TextInput
-              className="mt-4 bg-white dark:bg-black text-black dark:text-neutral-100 px-4 py-3.5 rounded-xl border border-neutral-200 dark:border-zinc-800 text-sm "
-              placeholder="Commit message (auto-generated if empty)"
-              placeholderTextColor="#8b949e"
-              value={commitMsg}
-              onChangeText={setCommitMsg}
-            />
+            {/* Commit message + AI button */}
+            <View className="mt-4 flex-row items-start gap-2">
+              <TextInput
+                className="flex-1 bg-white dark:bg-black text-black dark:text-neutral-100 px-4 py-3.5 rounded-xl border border-neutral-200 dark:border-zinc-800 text-sm"
+                placeholder="Commit message (tap ✨ to generate)"
+                placeholderTextColor="#8b949e"
+                value={commitMsg}
+                onChangeText={setCommitMsg}
+                multiline
+                style={{ minHeight: 50 }}
+              />
+              <TouchableOpacity
+                onPress={handleGenerateCommitMsg}
+                disabled={generatingMsg || modFiles.length === 0}
+                className="items-center justify-center rounded-xl border px-3 py-3.5"
+                style={{
+                  backgroundColor: generatingMsg ? '#1f2937' : '#1f6feb22',
+                  borderColor: '#1f6feb88',
+                  opacity: modFiles.length === 0 ? 0.4 : 1,
+                  minWidth: 50,
+                  minHeight: 50,
+                }}
+              >
+                {generatingMsg ? (
+                  <ActivityIndicator size="small" color="#58a6ff" />
+                ) : (
+                  <Text style={{ fontSize: 20 }}>✨</Text>
+                )}
+              </TouchableOpacity>
+            </View>
 
             {/* Status summary */}
             <View className="mt-5 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden ">
