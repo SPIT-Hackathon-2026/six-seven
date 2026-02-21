@@ -245,6 +245,37 @@ export default function RepoDetailScreen() {
   >(null)
   const [loadingCompare, setLoadingCompare] = useState(false)
 
+   // Collaborator state
+   const [collabUsername, setCollabUsername] = useState('');
+   const [collabStatus, setCollabStatus] = useState('');
+   const [collabStatusColor, setCollabStatusColor] = useState('#2ea043');
+   const [addingCollab, setAddingCollab] = useState(false);
+   // Handler for adding collaborator
+   const handleAddCollaborator = useCallback(async () => {
+     if (!name || !collabUsername.trim()) {
+       setCollabStatus('Enter a valid username');
+       setCollabStatusColor('#f85149');
+       return;
+     }
+     setAddingCollab(true);
+     setCollabStatus('');
+     setCollabStatusColor('#2ea043');
+     try {
+       // Get owner username from GitHub auth cache
+       const { getCachedUsername, addCollaborator } = await import('@/services/githubAuth');
+       const owner = getCachedUsername();
+       if (!owner) throw new Error('GitHub account not linked');
+       await addCollaborator(owner, name, collabUsername);
+       setCollabStatus('Collaborator added!');
+       setCollabStatusColor('#2ea043');
+       setCollabUsername('');
+     } catch (err) {
+       setCollabStatus('Failed to add collaborator');
+       setCollabStatusColor('#f85149');
+     } finally {
+       setAddingCollab(false);
+     }
+   }, [name, collabUsername]);
   /* ─── tree from flat list ─── */
   const tree = useMemo(() => buildTree(treeFiles), [treeFiles])
 
@@ -1449,9 +1480,33 @@ export default function RepoDetailScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* GitHub Sync */}
+            {/* GitHub Sync & Collaborators */}
             {ghLinked && (
               <View className="mt-4">
+                {/* Add Collaborator UI */}
+                <View className="mb-4">
+                  <Text className="text-neutral-500 text-xs font-bold mb-2">Add Collaborator</Text>
+                  <View className="flex-row gap-2">
+                    <TextInput
+                      className="flex-1 bg-neutral-50 dark:bg-black text-black dark:text-neutral-100 px-3 py-2.5 rounded-md border border-neutral-200 dark:border-zinc-800 text-sm"
+                      value={collabUsername}
+                      onChangeText={setCollabUsername}
+                      placeholder="GitHub username"
+                      placeholderTextColor="#8b949e"
+                      autoCapitalize="none"
+                    />
+                    <TouchableOpacity
+                      className="px-4 py-2.5 rounded-md bg-[#2ea043] justify-center"
+                      onPress={handleAddCollaborator}
+                      disabled={addingCollab}
+                    >
+                      <Text className="text-white text-sm font-bold">Add</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {collabStatus && (
+                    <Text className="text-xs mt-2" style={{ color: collabStatusColor }}>{collabStatus}</Text>
+                  )}
+                </View>
                 {remoteUrl ? (
                   <View>
                     <View className="flex-row items-center mb-2">
@@ -1459,7 +1514,7 @@ export default function RepoDetailScreen() {
                       <Text className="text-neutral-500 text-[11px] ml-1 flex-1" numberOfLines={1}>
                         {remoteUrl}
                       </Text>
-                      {!checkOnline() && (
+                      {!isOnline() && (
                         <Text className="text-[10px] text-red-500 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded font-medium ml-1">
                           offline
                         </Text>
@@ -1534,7 +1589,7 @@ export default function RepoDetailScreen() {
                           const ghRepo = await createGitHubRepo(name, { isPrivate: true })
                           await addRemote(name, 'origin', ghRepo.clone_url)
                           setRemoteUrl(ghRepo.clone_url)
-                          if (checkOnline()) {
+                          if (isOnline()) {
                             try {
                               await pushRemote(name)
                             } catch { /* may fail if empty repo */ }

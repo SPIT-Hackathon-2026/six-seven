@@ -1,4 +1,35 @@
 /**
+ * Add a collaborator to a repo (GitHub API).
+ * @param {string} owner - repo owner
+ * @param {string} repo - repo name
+ * @param {string} username - GitHub username to invite
+ * @param {string} [permission] - 'push', 'pull', 'admin' (default: 'push')
+ */
+export async function addCollaborator(
+  owner,
+  repo,
+  username,
+  permission = 'push',
+) {
+  const auth = await _load()
+  if (!auth?.token) throw new Error('GitHub PAT not configured')
+  const resp = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/collaborators/${username}`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `token ${auth.token}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ permission }),
+    },
+  )
+  if (resp.status === 201 || resp.status === 204) return true
+  const body = await resp.text()
+  throw new Error(`GitHub API ${resp.status}: ${body.slice(0, 300)}`)
+}
+/**
  * GitHub PAT storage & HTTP helper for isomorphic-git.
  *
  * Stores the token + username in a JSON file inside the app's document directory.
