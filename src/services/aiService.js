@@ -55,17 +55,22 @@ async function callLLM(prompt, { maxTokens = 512, temperature = 0.3 } = {}) {
  * Returns parsed JSON or null on failure (falls back to regex parser).
  */
 export async function aiParseQuery(query) {
-  const prompt = `You are a Git commit search query parser. Parse the following natural language query into a JSON object with these fields:
-- authors: array of author names/emails mentioned (empty if none)
-- files: array of file paths, file names, or folder names mentioned (empty if none)
-- dateRange: object with "since" and/or "until" as ISO date strings, or null. Use today's date ${new Date().toISOString().split('T')[0]} as reference.
-- type: one of "bug", "feature", "refactor", "docs", "style", "test", "chore", or null
-- keywords: array of important search keywords NOT covered by other fields (empty if none)
-- intent: a one-line description of what the user is looking for
+  const today = new Date().toISOString().split('T')[0]
+  const prompt = `Parse this Git search query into JSON. Today is ${today}.
+
+Rules:
+- authors: extract mentioned person names/usernames (empty array if none)
+- files: extract file names, paths, or folder names like "services", "auth", "login.tsx" (empty if none)
+- dateRange: {"since":"YYYY-MM-DD"} or {"since":"YYYY-MM-DD","until":"YYYY-MM-DD"} or null
+  - "today" → since today, "last week" → since 7 days ago, "this month" → since 1st of month
+- type: one of bug/feature/refactor/docs/style/test/chore or null
+  - "bug fixes" → "bug", "new features" → "feature", "refactoring" → "refactor"
+- keywords: ONLY important search terms not captured above. Keep minimal. Do NOT include generic words.
+- intent: one sentence describing what the user wants
 
 Query: "${query}"
 
-Respond ONLY with valid JSON, no markdown, no explanation.`
+Respond with ONLY valid JSON, no markdown fences.`
 
   const result = await callLLM(prompt, { maxTokens: 300, temperature: 0.1 })
   if (!result) return null

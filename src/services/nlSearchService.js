@@ -4,8 +4,6 @@
  * Natural-language commit search engine.
  * Parses human queries like "who modified login.tsx last week"
  * into structured filters, then searches the git log across repos.
- *
- * No LLM required — uses pattern matching and smart keyword extraction.
  */
 
 import { getLog, diffSummary } from './gitService'
@@ -19,17 +17,13 @@ export { aiSummarizeResults, isAIAvailable }
 //  QUERY PARSER — Natural Language → Structured Filters
 // =====================================================================
 
-/**
- * Parse a natural-language query into structured search filters.
- * Returns { authors, files, keywords, dateRange, repo, type }
- */
 export function parseQuery(query) {
   const q = query.trim().toLowerCase()
   const filters = {
     authors: [],
     files: [],
     keywords: [],
-    dateRange: null,   // { since, until } as ms timestamps
+    dateRange: null,
     repo: null,
     type: null,
     limit: 50,
@@ -38,138 +32,102 @@ export function parseQuery(query) {
   let remaining = q
 
   // ── Author extraction ──────────────────────────────────────────
-
-  const authorPatterns = [
-    /(?:by|from|author)\s+["']?([a-z0-9_.\-@\s]+?)["']?(?:\s+(?:in|on|to|since|last|this|yesterday|today|before|after|about|regarding)|$)/i,
-  ]
-  for (const re of authorPatterns) {
-    const m = remaining.match(re)
-    if (m && m[1]) {
-      filters.authors.push(m[1].trim())
-      remaining = remaining.replace(m[0], ' ')
+  const authorMatch = remaining.match(/(?:by|from|author)\s+["']?([a-zA-Z0-9_.\-@]+)["']?/i)
+  if (authorMatch && authorMatch[1] && authorMatch[1].length > 1) {
+    const author = authorMatch[1].trim()
+    // Don't capture time words or common prepositions as authors
+    if (!isTimeWord(author) && !isStopWord(author)) {
+      filters.authors.push(author)
+      remaining = remaining.replace(authorMatch[0], ' ')
     }
   }
 
   // ── File / path extraction ─────────────────────────────────────
-
-  const filePatterns = [
-    /(?:in|to|on|for|file|modif(?:y|ied)|chang(?:e|ed|es)|touch(?:ed)?|updat(?:e|ed))\s+["']?([a-z0-9_.\-/]+\.[a-z]{1,5})["']?/gi,
-    /["']([a-z0-9_.\-/]+\.[a-z]{1,5})["']/gi,
-    /(?:^|\s)([a-z0-9_\-]+\.[a-z]{2,5})(?:\s|$)/gi,
-  ]
-  for (const re of filePatterns) {
-    let m
-    while ((m = re.exec(remaining)) !== null) {
-      if (m[1] && !['ago', 'com'].includes(m[1])) {
-        filters.files.push(m[1].trim())
-      }
+  // Match explicit file extensions
+  const fileRegex = /\b([a-z0-9_/\-]+\.[a-z]{1,6})\b/gi
+  let fm
+  while ((fm = fileRegex.exec(remaining)) !== null) {
+    const f = fm[1]
+    if (f && !['e.g', 'i.e', 'vs.', 'etc.'].includes(f) && f.length > 2) {
+      filters.files.push(f)
     }
   }
 
-  // folder patterns: "changes to auth", "in src/utils"
-  const folderPattern = /(?:changes?\s+(?:to|in)|in\s+(?:the\s+)?(?:folder|dir|directory|module|package)?)\s+["']?([a-z0-9_.\-/]+)["']?/gi
-  let fm
-  while ((fm = folderPattern.exec(remaining)) !== null) {
-    if (fm[1] && fm[1].length > 1 && !isTimeWord(fm[1])) {
-      filters.files.push(fm[1].trim())
-    }
+  // "changes to <folder>", "in <folder>"
+  const folderMatch = remaining.match(/(?:changes?\s+(?:to|in)|(?:in|to)\s+(?:the\s+)?)(?:folder|dir(?:ectory)?|module)?\s*["']?([a-z0-9_/\-]+)["']?/i)
+  if (folderMatch && folderMatch[1] && folderMatch[1].length > 1 && !isTimeWord(folderMatch[1]) && !isStopWord(folderMatch[1])) {
+    filters.files.push(folderMatch[1])
+    remaining = remaining.replace(folderMatch[0], ' ')
   }
 
   // ── Date range extraction ──────────────────────────────────────
-
   const now = Date.now()
   const DAY = 86400000
   const WEEK = 7 * DAY
   const MONTH = 30 * DAY
 
-  // "last week", "last month", "last 3 days"
-  const lastMatch = remaining.match(/last\s+(\d+\s+)?(?:day|week|month|year)s?/i)
-  if (lastMatch) {
-    const full = lastMatch[0]
-    const num = lastMatch[1] ? parseInt(lastMatch[1]) : 1
-    if (full.includes('day'))        filters.dateRange = { since: now - num * DAY }
-    else if (full.includes('week'))  filters.dateRange = { since: now - num * WEEK }
-    else if (full.includes('month')) filters.dateRange = { since: now - num * MONTH }
-    else if (full.includes('year'))  filters.dateRange = { since: now - num * 365 * DAY }
-    remaining = remaining.replace(full, ' ')
-  }
-
-  // "today"
-  if (/\btoday\b/.test(remaining)) {
-    const startOfDay = new Date()
-    startOfDay.setHours(0, 0, 0, 0)
-    filters.dateRange = { since: startOfDay.getTime() }
-    remaining = remaining.replace(/\btoday\b/, ' ')
-  }
-
-  // "yesterday"
-  if (/\byesterday\b/.test(remaining)) {
-    const startYesterday = new Date()
-    startYesterday.setDate(startYesterday.getDate() - 1)
-    startYesterday.setHours(0, 0, 0, 0)
-    const endYesterday = new Date()
-    endYesterday.setHours(0, 0, 0, 0)
-    filters.dateRange = { since: startYesterday.getTime(), until: endYesterday.getTime() }
-    remaining = remaining.replace(/\byesterday\b/, ' ')
-  }
-
-  // "this week", "this month"
-  const thisMatch = remaining.match(/this\s+(week|month|year)/i)
-  if (thisMatch) {
-    const unit = thisMatch[1]
-    const start = new Date()
-    if (unit === 'week') start.setDate(start.getDate() - start.getDay())
-    else if (unit === 'month') start.setDate(1)
-    else if (unit === 'year') { start.setMonth(0); start.setDate(1) }
-    start.setHours(0, 0, 0, 0)
-    filters.dateRange = { since: start.getTime() }
-    remaining = remaining.replace(thisMatch[0], ' ')
-  }
-
-  // "recently" → last 2 weeks
-  if (/\brecently?\b/.test(remaining)) {
-    if (!filters.dateRange) {
-      filters.dateRange = { since: now - 2 * WEEK }
+  if (/\btoday\b/i.test(remaining)) {
+    const d = new Date(); d.setHours(0, 0, 0, 0)
+    filters.dateRange = { since: d.getTime() }
+    remaining = remaining.replace(/\btoday\b/gi, ' ')
+  } else if (/\byesterday\b/i.test(remaining)) {
+    const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(0, 0, 0, 0)
+    const e = new Date(); e.setHours(0, 0, 0, 0)
+    filters.dateRange = { since: d.getTime(), until: e.getTime() }
+    remaining = remaining.replace(/\byesterday\b/gi, ' ')
+  } else {
+    const lastMatch = remaining.match(/(?:last|past)\s+(\d+\s+)?(?:day|week|month|year)s?/i)
+    if (lastMatch) {
+      const num = lastMatch[1] ? parseInt(lastMatch[1]) : 1
+      const full = lastMatch[0].toLowerCase()
+      if (full.includes('day'))        filters.dateRange = { since: now - num * DAY }
+      else if (full.includes('week'))  filters.dateRange = { since: now - num * WEEK }
+      else if (full.includes('month')) filters.dateRange = { since: now - num * MONTH }
+      else if (full.includes('year'))  filters.dateRange = { since: now - num * 365 * DAY }
+      remaining = remaining.replace(lastMatch[0], ' ')
     }
-    remaining = remaining.replace(/\brecently?\b/, ' ')
+
+    const thisMatch = remaining.match(/this\s+(week|month|year)/i)
+    if (thisMatch) {
+      const unit = thisMatch[1].toLowerCase()
+      const start = new Date()
+      if (unit === 'week') start.setDate(start.getDate() - start.getDay())
+      else if (unit === 'month') start.setDate(1)
+      else { start.setMonth(0); start.setDate(1) }
+      start.setHours(0, 0, 0, 0)
+      filters.dateRange = { since: start.getTime() }
+      remaining = remaining.replace(thisMatch[0], ' ')
+    }
+  }
+
+  if (/\brecently?\b/i.test(remaining) && !filters.dateRange) {
+    filters.dateRange = { since: now - 2 * WEEK }
+    remaining = remaining.replace(/\brecently?\b/gi, ' ')
   }
 
   // ── Commit type extraction ─────────────────────────────────────
-
   const typeMap = {
-    bug: /\b(?:bug|bugs|bugfix|fix|fixes|fixed|hotfix|patch)\b/,
-    feature: /\b(?:feature|features|feat|add|adds|added|new|implement|implemented)\b/,
-    refactor: /\b(?:refactor|refactored|refactoring|cleanup|clean.?up|restructure)\b/,
-    docs: /\b(?:docs|documentation|readme|comment|comments)\b/,
-    style: /\b(?:style|styling|css|ui|design|layout)\b/,
-    test: /\b(?:test|tests|testing|spec|specs)\b/,
-    chore: /\b(?:chore|deps|dependency|dependencies|upgrade|bump|version)\b/,
+    bug: /\b(?:bug|bugs|bugfix|fix|fixes|fixed|hotfix|patch)\b/i,
+    feature: /\b(?:feature|features|feat|new|implement|implemented|introduce)\b/i,
+    refactor: /\b(?:refactor|refactored|refactoring|cleanup|clean[\s-]?up|restructure)\b/i,
+    docs: /\b(?:docs?|documentation|readme|comment|comments|jsdoc)\b/i,
+    style: /\b(?:style|styling|css|ui|design|layout|theme)\b/i,
+    test: /\b(?:tests?|testing|spec|specs|jest|mocha)\b/i,
+    chore: /\b(?:chore|deps?|dependency|dependencies|upgrade|bump|version)\b/i,
   }
   for (const [type, re] of Object.entries(typeMap)) {
     if (re.test(remaining)) {
       filters.type = type
+      remaining = remaining.replace(re, ' ')
       break
     }
   }
 
   // ── Remaining keywords ─────────────────────────────────────────
-
-  const stopWords = new Set([
-    'show', 'me', 'the', 'all', 'find', 'search', 'for', 'get', 'list',
-    'what', 'which', 'where', 'when', 'who', 'how', 'did', 'does', 'do',
-    'is', 'are', 'was', 'were', 'has', 'have', 'had', 'been', 'being',
-    'a', 'an', 'of', 'in', 'on', 'at', 'to', 'with', 'from', 'by',
-    'about', 'like', 'that', 'this', 'it', 'its', 'and', 'or', 'but',
-    'not', 'no', 'so', 'if', 'any', 'my', 'our', 'their', 'his', 'her',
-    'changes', 'changed', 'change', 'commits', 'commit', 'committed',
-    'modified', 'modify', 'modifications', 'recent', 'latest',
-    'since', 'before', 'after', 'during', 'between', 'related',
-  ])
-
   const words = remaining
     .replace(/[^\w\s.-]/g, '')
     .split(/\s+/)
-    .filter((w) => w.length > 1 && !stopWords.has(w))
+    .filter((w) => w.length > 2 && !isStopWord(w) && !isTimeWord(w))
 
   filters.keywords = [...new Set(words)]
 
@@ -177,12 +135,9 @@ export function parseQuery(query) {
 }
 
 // =====================================================================
-//  SEARCH ENGINE — search commits using parsed filters
+//  SEARCH ENGINE
 // =====================================================================
 
-/**
- * Search commits across one or all repos using a natural-language query.
- */
 export async function searchCommits(query, repoName = null) {
   // Try AI parsing first, fall back to regex
   let filters = null
@@ -192,7 +147,6 @@ export async function searchCommits(query, repoName = null) {
     try {
       const aiResult = await aiParseQuery(query)
       if (aiResult) {
-        // Merge AI result with our expected shape
         filters = {
           authors: aiResult.authors || [],
           files: aiResult.files || [],
@@ -204,17 +158,14 @@ export async function searchCommits(query, repoName = null) {
         }
         aiIntent = aiResult.intent || null
       }
-    } catch {
-      // Fall through to regex parser
-    }
+    } catch { /* fall through */ }
   }
 
-  // Fallback to regex parser
   if (!filters) {
     filters = parseQuery(query)
   }
 
-  // Determine which repos to search
+  // Determine repos
   let repos
   if (repoName) {
     repos = [{ name: repoName }]
@@ -223,135 +174,133 @@ export async function searchCommits(query, repoName = null) {
     repos = allRepos.filter((r) => r.isGitRepo === true)
   }
 
-  // If no git repos at all, return empty
-  if (repos.length === 0) return { results: [], aiIntent: null, aiAvailable: isAIAvailable() }
+  if (repos.length === 0) {
+    return { results: [], aiIntent, aiAvailable: isAIAvailable() }
+  }
 
-  const hasAnyFilter = (
-    filters.dateRange ||
-    filters.authors.length > 0 ||
-    filters.files.length > 0 ||
-    filters.type ||
-    filters.keywords.length > 0
-  )
+  // Check which filter dimensions are active
+  const hasDateFilter = !!filters.dateRange
+  const hasAuthorFilter = filters.authors.length > 0
+  const hasTypeFilter = !!filters.type
+  const hasKeywordFilter = filters.keywords.length > 0
+  const hasFileFilter = filters.files.length > 0
+  const hasAnyFilter = hasDateFilter || hasAuthorFilter || hasTypeFilter || hasKeywordFilter || hasFileFilter
 
   const results = []
+  const queryLower = query.trim().toLowerCase()
 
   for (const repo of repos) {
+    let log
     try {
-      let log
-      try {
-        log = await getLog(repo.name, { depth: 100 })
-      } catch {
-        // Repo has no commits or HEAD doesn't resolve — skip silently
-        continue
+      log = await getLog(repo.name, { depth: 100 })
+    } catch {
+      continue // skip repos with no commits
+    }
+    if (!log || !Array.isArray(log) || log.length === 0) continue
+
+    for (const entry of log) {
+      const message = entry.commit?.message ?? entry.message ?? ''
+      const author = entry.commit?.author?.name ?? entry.author ?? 'Unknown'
+      const email = entry.commit?.author?.email ?? entry.email ?? ''
+      const rawTs = entry.commit?.author?.timestamp ?? entry.timestamp ?? 0
+      const timestampMs = rawTs > 1e12 ? rawTs : rawTs * 1000
+
+      const commit = {
+        repo: repo.name,
+        oid: entry.oid,
+        shortOid: entry.oid.slice(0, 7),
+        message: message.trim(),
+        author,
+        email,
+        timestamp: timestampMs,
+        score: 0,
+        matchReasons: [],
       }
-      if (!log || !Array.isArray(log) || log.length === 0) continue
 
-      for (const entry of log) {
-        // Normalize commit object (isomorphic-git format)
-        const message = entry.commit?.message ?? entry.message ?? ''
-        const author = entry.commit?.author?.name ?? entry.author ?? 'Unknown'
-        const email = entry.commit?.author?.email ?? entry.email ?? ''
-        // isomorphic-git timestamps are in SECONDS, convert to ms
-        const rawTs = entry.commit?.author?.timestamp ?? entry.timestamp ?? 0
-        const timestampMs = rawTs > 1e12 ? rawTs : rawTs * 1000
+      const msgLower = message.toLowerCase()
+      const authorLower = author.toLowerCase()
 
-        const commit = {
-          repo: repo.name,
-          oid: entry.oid,
-          shortOid: entry.oid.slice(0, 7),
-          message,
-          author,
-          email,
-          timestamp: timestampMs,
-          score: 0,
-          matchReasons: [],
-        }
+      // ── Date filter (hard filter — skip if outside range) ──
+      if (hasDateFilter) {
+        if (filters.dateRange.since && timestampMs < filters.dateRange.since) continue
+        if (filters.dateRange.until && timestampMs > filters.dateRange.until) continue
+        commit.score += 10
+        commit.matchReasons.push('date match')
+      }
 
-        // ── Score against filters ─────────────────────────────
-
-        // Date filter — skip commits outside range
-        if (filters.dateRange) {
-          if (filters.dateRange.since && commit.timestamp < filters.dateRange.since) continue
-          if (filters.dateRange.until && commit.timestamp > filters.dateRange.until) continue
-          // Commit passed date filter — boost score
-          commit.score += 10
-          commit.matchReasons.push('date match')
-        }
-
-        // Author filter
-        if (filters.authors.length > 0) {
-          const authorLower = author.toLowerCase()
-          const emailLower = email.toLowerCase()
-          const authorMatch = filters.authors.some(
-            (a) => authorLower.includes(a) || emailLower.includes(a),
-          )
-          if (authorMatch) {
-            commit.score += 20
-            commit.matchReasons.push('author')
-          } else {
-            continue // strict author filter
-          }
-        }
-
-        // Commit type filter
-        if (filters.type) {
-          const msgLower = message.toLowerCase()
-          const typeKeywords = {
-            bug: ['fix', 'bug', 'hotfix', 'patch', 'issue', 'resolve', 'error'],
-            feature: ['feat', 'add', 'new', 'implement', 'introduce', 'create'],
-            refactor: ['refactor', 'restructure', 'cleanup', 'clean up', 'reorganize', 'rename'],
-            docs: ['doc', 'readme', 'comment', 'documentation', 'jsdoc'],
-            style: ['style', 'css', 'ui', 'design', 'layout', 'theme', 'color'],
-            test: ['test', 'spec', 'coverage', 'assert', 'jest', 'mocha'],
-            chore: ['chore', 'deps', 'bump', 'upgrade', 'dependency', 'version', 'merge'],
-          }
-          const kws = typeKeywords[filters.type] || []
-          const typeMatch = kws.some((kw) => msgLower.includes(kw))
-          if (typeMatch) {
-            commit.score += 15
-            commit.matchReasons.push(filters.type)
-          }
-          // Don't skip — type is a soft filter, just don't boost
-        }
-
-        // Keyword match
-        if (filters.keywords.length > 0) {
-          const msgLower = message.toLowerCase()
-          const authorLower = author.toLowerCase()
-          for (const kw of filters.keywords) {
-            if (msgLower.includes(kw)) {
-              commit.score += 10
-              commit.matchReasons.push(`"${kw}"`)
-            } else if (authorLower.includes(kw)) {
-              commit.score += 5
-              commit.matchReasons.push(`"${kw}"`)
-            }
-          }
-        }
-
-        // File match — mark for lazy check
-        if (filters.files.length > 0) {
-          commit._needsFileCheck = true
-          commit.score += 1 // small boost so it enters results
-        }
-
-        // Include commit if it has any score, or if no specific filters were set
-        // (just date range means show all in range)
-        if (commit.score > 0 || !hasAnyFilter) {
-          commit.score = Math.max(commit.score, 1)
-          results.push(commit)
+      // ── Author filter (hard filter) ──
+      if (hasAuthorFilter) {
+        const match = filters.authors.some(
+          (a) => authorLower.includes(a.toLowerCase()) || email.toLowerCase().includes(a.toLowerCase()),
+        )
+        if (match) {
+          commit.score += 20
+          commit.matchReasons.push('author')
+        } else {
+          continue
         }
       }
-    } catch (err) {
-      // Skip repos that fail (not a git repo, empty, etc.)
-      // Skip repos that fail silently
+
+      // ── Type filter (soft — boost matching, slightly penalize non-matching) ──
+      if (hasTypeFilter) {
+        const typeKeywords = {
+          bug: ['fix', 'bug', 'hotfix', 'patch', 'issue', 'resolve', 'error', 'crash'],
+          feature: ['feat', 'add', 'new', 'implement', 'introduce', 'create', 'support'],
+          refactor: ['refactor', 'restructure', 'cleanup', 'clean', 'reorganize', 'rename', 'move', 'extract'],
+          docs: ['doc', 'readme', 'comment', 'documentation', 'jsdoc', 'guide'],
+          style: ['style', 'css', 'ui', 'design', 'layout', 'theme', 'color', 'font'],
+          test: ['test', 'spec', 'coverage', 'assert', 'jest', 'mock'],
+          chore: ['chore', 'dep', 'bump', 'upgrade', 'dependency', 'version', 'merge', 'release'],
+        }
+        const kws = typeKeywords[filters.type] || []
+        if (kws.some((kw) => msgLower.includes(kw))) {
+          commit.score += 15
+          commit.matchReasons.push(filters.type)
+        } else {
+          commit.score -= 3
+        }
+      }
+
+      // ── Keyword match (fuzzy — check message AND author) ──
+      if (hasKeywordFilter) {
+        for (const kw of filters.keywords) {
+          const kwLower = kw.toLowerCase()
+          if (msgLower.includes(kwLower)) {
+            commit.score += 10
+            commit.matchReasons.push(`"${kw}"`)
+          } else if (authorLower.includes(kwLower)) {
+            commit.score += 5
+            commit.matchReasons.push(`author: ${kw}`)
+          }
+        }
+      }
+
+      // ── File check marker ──
+      if (hasFileFilter) {
+        commit._needsFileCheck = true
+        commit.score += 1
+      }
+
+      // ── Direct text search (always do this as fallback) ──
+      // If the raw query appears in the commit message, boost it
+      if (queryLower.length > 3 && msgLower.includes(queryLower)) {
+        commit.score += 25
+        commit.matchReasons.push('exact match')
+      }
+
+      // Include if score > 0, or if only date filter is active (show all in range)
+      if (commit.score > 0) {
+        results.push(commit)
+      } else if (!hasAnyFilter) {
+        // No filters at all — show everything, sort by recency
+        commit.score = 1
+        results.push(commit)
+      }
     }
   }
 
-  // ── Lazy file matching for top results ──────────────────────────
-
-  if (filters.files.length > 0) {
+  // ── File matching (lazy, on top candidates) ──
+  if (hasFileFilter) {
     const candidates = results
       .filter((r) => r._needsFileCheck)
       .sort((a, b) => b.score - a.score)
@@ -365,35 +314,37 @@ export async function searchCommits(query, repoName = null) {
 
         for (const f of filters.files) {
           const fLower = f.toLowerCase()
-          const fileMatch = changedPaths.some(
-            (p) => p.includes(fLower) || p.endsWith(fLower) ||
-                   (p.split('/').pop() || '').includes(fLower),
-          )
-          if (fileMatch) {
+          if (changedPaths.some((p) => p.includes(fLower) || p.endsWith(fLower) || (p.split('/').pop() || '').includes(fLower))) {
             commit.score += 25
             commit.matchReasons.push(`file: ${f}`)
           }
         }
-      } catch {
-        // Skip
-      }
+      } catch { /* skip */ }
     }
 
-    // Remove results that were only there for file check but didn't match
+    // Remove file-check-only results that didn't match
     for (const r of results) {
       if (r._needsFileCheck && !r.matchReasons.some((m) => m.startsWith('file:'))) {
-        r.score -= 1 // remove the boost we added
+        r.score -= 1
       }
     }
   }
 
-  // Clean up internal flags
+  // Clean up
   results.forEach((r) => delete r._needsFileCheck)
 
-  // Remove results with score <= 0
+  // Filter out zero/negative scores
   const finalResults = results.filter((r) => r.score > 0)
 
-  // Sort by score (desc), then by timestamp (newest first)
+  // Recency boost: more recent commits get a small boost
+  const now = Date.now()
+  for (const r of finalResults) {
+    const ageHours = (now - r.timestamp) / 3600000
+    if (ageHours < 24) r.score += 3
+    else if (ageHours < 168) r.score += 1 // within a week
+  }
+
+  // Sort by score desc, then timestamp desc
   finalResults.sort((a, b) => b.score - a.score || b.timestamp - a.timestamp)
 
   return {
@@ -405,7 +356,7 @@ export async function searchCommits(query, repoName = null) {
 
 
 // =====================================================================
-//  SUGGESTED QUERIES — contextual examples
+//  SUGGESTED QUERIES
 // =====================================================================
 
 export const SUGGESTED_QUERIES = [
@@ -419,16 +370,10 @@ export const SUGGESTED_QUERIES = [
   { icon: '🧪', text: 'test-related commits', category: 'type' },
 ]
 
-/**
- * Get query suggestions based on partial input
- */
 export function getSuggestions(partialQuery) {
   if (!partialQuery || partialQuery.length < 2) return SUGGESTED_QUERIES
-
   const q = partialQuery.toLowerCase()
-  const matching = SUGGESTED_QUERIES.filter((s) =>
-    s.text.toLowerCase().includes(q),
-  )
+  const matching = SUGGESTED_QUERIES.filter((s) => s.text.toLowerCase().includes(q))
   if (matching.length > 0) return matching
 
   const dynamic = []
@@ -443,11 +388,26 @@ export function getSuggestions(partialQuery) {
   return dynamic.length > 0 ? dynamic : SUGGESTED_QUERIES
 }
 
-
 // =====================================================================
 //  HELPERS
 // =====================================================================
 
 function isTimeWord(w) {
-  return /^(day|week|month|year|today|yesterday|ago|last|this|since|before|after)s?$/i.test(w)
+  return /^(day|days|week|weeks|month|months|year|years|today|yesterday|ago|last|past|this|since|before|after|recently|recent)$/i.test(w)
+}
+
+function isStopWord(w) {
+  const stops = new Set([
+    'show', 'me', 'the', 'all', 'find', 'search', 'for', 'get', 'list',
+    'what', 'which', 'where', 'when', 'who', 'how', 'did', 'does',
+    'is', 'are', 'was', 'were', 'has', 'have', 'had', 'been',
+    'an', 'of', 'in', 'on', 'at', 'to', 'with', 'from', 'by',
+    'about', 'like', 'that', 'this', 'and', 'or', 'but', 'not',
+    'no', 'so', 'if', 'any', 'my', 'our', 'their', 'his', 'her',
+    'changes', 'changed', 'change', 'commits', 'commit', 'committed',
+    'modified', 'modify', 'modifications', 'recent', 'latest',
+    'since', 'before', 'after', 'during', 'between', 'related',
+    'added', 'made',
+  ])
+  return stops.has(w.toLowerCase())
 }
