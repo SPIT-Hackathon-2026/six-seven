@@ -1,12 +1,13 @@
 import { View, Text, TouchableOpacity } from 'react-native'
 import { usePathname, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { BookMarked, FolderTree, GitMerge, Clock, Settings } from 'lucide-react-native'
+import { BookMarked, FolderTree, GitMerge, Clock, Settings, Sparkles } from 'lucide-react-native'
 
 const tabs = [
-  { label: 'Repositories', icon: BookMarked, route: '/' },
+  { label: 'Repos', icon: BookMarked, route: '/' },
   { label: 'Files', icon: FolderTree, route: '/files' },
-  { label: 'Source Control', icon: GitMerge, route: '/source-control' },
+  { label: 'Source', icon: GitMerge, route: '/source-control' },
+  { label: 'Search', icon: Sparkles, route: '/search' },
   { label: 'History', icon: Clock, route: '/history' },
   { label: 'Settings', icon: Settings, route: '/settings' },
 ] as const

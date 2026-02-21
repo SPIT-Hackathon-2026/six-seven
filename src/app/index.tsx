@@ -216,7 +216,6 @@ export default function HomeScreen() {
           )
         }
       }
-
       setShowInitDialog(false)
       setInitName('')
       setInitDescription('')
