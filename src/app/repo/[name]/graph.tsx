@@ -211,8 +211,8 @@ export default function BranchGraphScreen() {
   /* ─── guard ─── */
   if (!name) {
     return (
-      <View className="flex-1 bg-[#0d1117] items-center justify-center">
-        <Text className="text-[#e6edf3]">Invalid repository</Text>
+      <View className="flex-1 bg-neutral-100 dark:bg-black items-center justify-center">
+        <Text className="text-black dark:text-neutral-100">Invalid repository</Text>
       </View>
     )
   }
@@ -222,15 +222,15 @@ export default function BranchGraphScreen() {
   const NODE_SIZE = 12
 
   return (
-    <View className="flex-1 bg-[#0d1117]">
+    <View className="flex-1 bg-neutral-100 dark:bg-black">
       {/* ── Header ── */}
-      <View className="flex-row items-center justify-between px-4 pt-14 pb-3 border-b border-[#30363d] bg-[#161b22]">
-        <TouchableOpacity onPress={() => router.back()} className="p-1">
+      <View className="flex-row items-center justify-between px-4 pt-14 pb-4 border-b border-neutral-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+        <TouchableOpacity onPress={() => router.back()} className="p-2">
           <Text className="text-[#58a6ff] text-2xl font-bold">‹</Text>
         </TouchableOpacity>
         <View className="flex-1 items-center">
-          <Text className="text-[#e6edf3] text-lg font-bold">Branch Graph</Text>
-          <Text className="text-[#8b949e] text-[11px]">{name}</Text>
+          <Text className="text-black dark:text-neutral-100 text-lg font-bold">Branch Graph</Text>
+          <Text className="text-neutral-500 text-xs font-medium">{name}</Text>
         </View>
         <View className="w-8" />
       </View>
@@ -239,19 +239,19 @@ export default function BranchGraphScreen() {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        className="border-b border-[#30363d]"
+        className="border-b border-neutral-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50"
       >
-        <View className="flex-row px-3 py-2 gap-2 items-center">
+        <View className="flex-row px-4 py-3 gap-2 items-center">
           <TouchableOpacity
-            className={`px-3 py-1.5 rounded-full border ${
+            className={`px-4 py-2 rounded-xl border  ${
               activeBranch === null
-                ? 'bg-[#21262d] border-[#58a6ff]'
-                : 'border-[#30363d]'
+                ? 'bg-blue-50 dark:bg-zinc-800 border-[#1f6feb] dark:border-[#58a6ff]'
+                : 'bg-white dark:bg-black border-neutral-200 dark:border-zinc-800'
             }`}
             onPress={() => setActiveBranch(null)}
           >
             <Text
-              className={`text-xs font-semibold ${activeBranch === null ? 'text-[#58a6ff]' : 'text-[#8b949e]'}`}
+              className={`text-xs font-bold tracking-wide uppercase ${activeBranch === null ? 'text-[#1f6feb] dark:text-[#58a6ff]' : 'text-neutral-500'}`}
             >
               All
             </Text>
@@ -259,26 +259,26 @@ export default function BranchGraphScreen() {
           {branchInfos.map((bi) => (
             <TouchableOpacity
               key={bi.name}
-              className={`flex-row items-center gap-1.5 px-3 py-1.5 rounded-full border ${
+              className={`flex-row items-center gap-2 px-4 py-2 rounded-xl border  ${
                 activeBranch === bi.name
-                  ? 'bg-[#21262d] border-[' + bi.color + ']'
-                  : 'border-[#30363d]'
+                  ? 'bg-neutral-50 dark:bg-zinc-800 border-[' + bi.color + ']'
+                  : 'bg-white dark:bg-black border-neutral-200 dark:border-zinc-800'
               }`}
               onPress={() =>
                 setActiveBranch(activeBranch === bi.name ? null : bi.name)
               }
             >
               <View
-                className="w-2.5 h-2.5 rounded-full"
+                className="w-3 h-3 rounded-full "
                 style={{ backgroundColor: bi.color }}
               />
               <Text
-                className={`text-xs ${activeBranch === bi.name ? 'text-[#e6edf3] font-semibold' : 'text-[#8b949e]'}`}
+                className={`text-xs ${activeBranch === bi.name ? 'text-black dark:text-neutral-100 font-bold' : 'text-neutral-500 font-medium'}`}
               >
                 {bi.name}
               </Text>
               {bi.name === current && (
-                <Text className="text-[#7ee787] text-[9px]">★</Text>
+                <Text className="text-[#7ee787] text-[10px] ml-1 font-bold">★</Text>
               )}
             </TouchableOpacity>
           ))}
@@ -286,8 +286,8 @@ export default function BranchGraphScreen() {
       </ScrollView>
 
       {/* ── Legend ── */}
-      <View className="px-4 py-2 border-b border-[#21262d]">
-        <Text className="text-[#484f58] text-[10px]">
+      <View className="px-5 py-3 border-b border-neutral-200 dark:border-zinc-800 bg-neutral-50 dark:bg-black">
+        <Text className="text-neutral-500 text-[11px] font-bold uppercase tracking-wider">
           {branchInfos.length} branch{branchInfos.length !== 1 ? 'es' : ''} ·{' '}
           {graphCommits.length} commits ·{' '}
           {activeBranch ? `Showing ${activeBranch}` : 'Showing all branches'}
@@ -309,13 +309,13 @@ export default function BranchGraphScreen() {
         {loading ? (
           <View className="mt-8 items-center">
             <ActivityIndicator color="#58a6ff" size="large" />
-            <Text className="text-[#8b949e] mt-3 text-sm">
+            <Text className="text-neutral-500 mt-4 text-sm font-medium">
               Building graph...
             </Text>
           </View>
         ) : visibleCommits.length === 0 ? (
           <View className="mt-8 items-center">
-            <Text className="text-[#484f58] text-sm">No commits found</Text>
+            <Text className="text-neutral-500 text-sm font-medium">No commits found</Text>
           </View>
         ) : (
           <View style={{ paddingLeft: GRAPH_LEFT }}>
@@ -367,7 +367,7 @@ export default function BranchGraphScreen() {
                           borderRadius: isMerge ? 2 : NODE_SIZE / 2,
                           backgroundColor: commit.branchColor,
                           borderWidth: isMerge ? 2 : 0,
-                          borderColor: '#0d1117',
+                          borderColor: 'black',
                           zIndex: 2,
                         }}
                       />
@@ -396,18 +396,18 @@ export default function BranchGraphScreen() {
 
                     {/* ── Commit details ── */}
                     <View
-                      className={`flex-1 py-2 pr-4 ${!isLast ? 'border-b border-[#21262d]' : ''}`}
+                      className={`flex-1 py-3 pr-4 ml-2 ${!isLast ? 'border-b border-neutral-200 dark:border-zinc-800' : ''}`}
                     >
                       {/* Branch labels */}
                       {commit.branches.length > 0 && (
-                        <View className="flex-row flex-wrap gap-1 mb-1">
+                        <View className="flex-row flex-wrap gap-2 mb-2">
                           {commit.branches.map((br) => {
                             const info = branchInfos.find((b) => b.name === br)
                             const color = info?.color ?? '#58a6ff'
                             return (
                               <View
                                 key={br}
-                                className="flex-row items-center gap-1 px-2 py-0.5 rounded-full"
+                                className="flex-row items-center gap-1.5 px-2 py-1 rounded-md "
                                 style={{
                                   backgroundColor: color + '22',
                                   borderWidth: 1,
@@ -419,13 +419,13 @@ export default function BranchGraphScreen() {
                                   style={{ backgroundColor: color }}
                                 />
                                 <Text
-                                  className="text-[10px] font-semibold"
+                                  className="text-[10px] font-bold uppercase tracking-wider"
                                   style={{ color }}
                                 >
                                   {br}
                                 </Text>
                                 {br === current && (
-                                  <Text className="text-[#7ee787] text-[9px]">
+                                  <Text className="text-[#7ee787] text-[10px] ml-0.5">
                                     ★
                                   </Text>
                                 )}
@@ -437,26 +437,28 @@ export default function BranchGraphScreen() {
 
                       {/* Commit message */}
                       <Text
-                        className="text-[#e6edf3] text-sm"
+                        className="text-black dark:text-neutral-100 text-[13px] font-medium leading-snug"
                         numberOfLines={isExpanded ? undefined : 1}
                       >
                         {commit.message.split('\n')[0]}
                       </Text>
 
                       {/* Meta */}
-                      <View className="flex-row items-center mt-0.5 gap-2">
-                        <Text className="text-[#484f58] text-xs font-mono">
+                      <View className="flex-row items-center mt-2 gap-3 flex-wrap">
+                        <Text className="text-neutral-400 dark:text-neutral-500 text-xs font-mono font-bold tracking-wider">
                           {commit.shortOid}
                         </Text>
-                        <Text className="text-[#484f58] text-xs">
+                        <View className="w-1 h-1 rounded-full bg-neutral-300 dark:bg-zinc-700" />
+                        <Text className="text-neutral-500 text-xs font-medium">
                           {commit.author}
                         </Text>
-                        <Text className="text-[#484f58] text-xs">
+                        <View className="w-1 h-1 rounded-full bg-neutral-300 dark:bg-zinc-700" />
+                        <Text className="text-neutral-500 text-xs font-medium">
                           {timeAgo(commit.timestamp)}
                         </Text>
                         {isMerge && (
-                          <View className="px-1.5 py-0.5 rounded bg-[#30363d]">
-                            <Text className="text-[#d2a8ff] text-[9px] font-semibold">
+                          <View className="px-1.5 py-0.5 rounded ml-2 border border-[#d2a8ff]/30 bg-[#d2a8ff]/10">
+                            <Text className="text-[#d2a8ff] text-[9px] font-bold tracking-wider">
                               MERGE
                             </Text>
                           </View>
@@ -465,57 +467,65 @@ export default function BranchGraphScreen() {
 
                       {/* Expanded details */}
                       {isExpanded && (
-                        <View className="mt-2 rounded-lg bg-[#161b22] border border-[#30363d] p-3">
-                          <Text className="text-[#8b949e] text-xs mb-1">
+                        <View className="mt-3 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 p-4  mb-2">
+                          <Text className="text-neutral-400 dark:text-neutral-500 text-[10px] font-bold uppercase tracking-wider mb-1.5">
                             Full commit hash
                           </Text>
-                          <Text className="text-[#e6edf3] text-xs font-mono mb-2">
+                          <Text className="text-black dark:text-neutral-200 text-xs font-mono font-medium mb-3">
                             {commit.oid}
                           </Text>
 
                           {commit.message.includes('\n') && (
                             <>
-                              <Text className="text-[#8b949e] text-xs mb-1">
+                              <Text className="text-neutral-400 dark:text-neutral-500 text-[10px] font-bold uppercase tracking-wider mb-1.5">
                                 Full message
                               </Text>
-                              <Text className="text-[#c9d1d9] text-xs mb-2">
+                              <Text className="text-black dark:text-neutral-300 text-xs mb-3 leading-relaxed">
                                 {commit.message}
                               </Text>
                             </>
                           )}
 
-                          <Text className="text-[#8b949e] text-xs mb-1">
-                            Author
-                          </Text>
-                          <Text className="text-[#e6edf3] text-xs mb-2">
-                            {commit.author}
-                          </Text>
+                          <View className="flex-row mb-3">
+                            <View className="flex-1">
+                              <Text className="text-neutral-400 dark:text-neutral-500 text-[10px] font-bold uppercase tracking-wider mb-1.5">
+                                Author
+                              </Text>
+                              <Text className="text-black dark:text-neutral-200 text-xs font-medium">
+                                {commit.author}
+                              </Text>
+                            </View>
 
-                          <Text className="text-[#8b949e] text-xs mb-1">
-                            Date
-                          </Text>
-                          <Text className="text-[#e6edf3] text-xs mb-2">
-                            {formatDate(commit.timestamp)}
-                          </Text>
+                            <View className="flex-1">
+                              <Text className="text-neutral-400 dark:text-neutral-500 text-[10px] font-bold uppercase tracking-wider mb-1.5">
+                                Date
+                              </Text>
+                              <Text className="text-black dark:text-neutral-200 text-xs font-medium">
+                                {formatDate(commit.timestamp)}
+                              </Text>
+                            </View>
+                          </View>
 
-                          <Text className="text-[#8b949e] text-xs mb-1">
+                          <Text className="text-neutral-400 dark:text-neutral-500 text-[10px] font-bold uppercase tracking-wider mb-1.5">
                             Parents ({commit.parents.length})
                           </Text>
-                          {commit.parents.map((p) => (
-                            <Text
-                              key={p}
-                              className="text-[#58a6ff] text-xs font-mono"
-                            >
-                              {p.slice(0, 7)}
-                            </Text>
-                          ))}
+                          <View className="flex-row flex-wrap gap-2">
+                            {commit.parents.map((p) => (
+                              <Text
+                                key={p}
+                                className="text-[#1f6feb] dark:text-[#58a6ff] text-xs font-mono font-medium"
+                              >
+                                {p.slice(0, 7)}
+                              </Text>
+                            ))}
+                          </View>
 
                           {commit.branches.length > 0 && (
                             <>
-                              <Text className="text-[#8b949e] text-xs mb-1 mt-2">
+                              <Text className="text-neutral-400 dark:text-neutral-500 text-[10px] font-bold uppercase tracking-wider mb-1.5 mt-3">
                                 Branch tips
                               </Text>
-                              <Text className="text-[#7ee787] text-xs">
+                              <Text className="text-[#238636] dark:text-[#7ee787] text-xs font-medium">
                                 {commit.branches.join(', ')}
                               </Text>
                             </>

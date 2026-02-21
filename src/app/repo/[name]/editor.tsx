@@ -95,24 +95,24 @@ export default function EditorScreen() {
 
   if (!name || !file) {
     return (
-      <View className="flex-1 bg-[#0d1117] items-center justify-center">
-        <Text className="text-[#e6edf3]">Invalid file parameters</Text>
+      <View className="flex-1 bg-neutral-100 dark:bg-black items-center justify-center">
+        <Text className="text-black dark:text-neutral-100">Invalid file parameters</Text>
       </View>
     )
   }
 
   if (loading) {
     return (
-      <View className="flex-1 bg-[#0d1117] items-center justify-center">
+      <View className="flex-1 bg-neutral-100 dark:bg-black items-center justify-center">
         <ActivityIndicator color="#58a6ff" />
       </View>
     )
   }
 
   return (
-    <View className="flex-1 bg-[#0d1117]">
+    <View className="flex-1 bg-neutral-100 dark:bg-black">
       {/* Header */}
-      <View className="flex-row items-center justify-between px-4 py-3 border-b border-[#30363d]">
+      <View className="flex-row items-center justify-between px-4 pt-14 pb-4 border-b border-neutral-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 ">
         <TouchableOpacity
           onPress={() => {
             if (hasChanges) {
@@ -128,26 +128,27 @@ export default function EditorScreen() {
               router.back()
             }
           }}
+          className="p-2 -ml-2"
         >
-          <Text className="text-[#58a6ff] text-base font-semibold">‹ Back</Text>
+          <Text className="text-[#58a6ff] text-base font-bold tracking-wide">‹ Back</Text>
         </TouchableOpacity>
 
-        <View className="flex-1 items-center mx-2">
-          <Text className="text-[#e6edf3] text-sm font-bold" numberOfLines={1}>
+        <View className="flex-1 items-center mx-3 mt-1">
+          <Text className="text-black dark:text-neutral-100 text-[15px] font-bold tracking-wide" numberOfLines={1}>
             {file.split('/').pop()}
           </Text>
           {status ? (
-            <Text className="text-[#8b949e] text-[10px]">{status}</Text>
+            <Text className="text-neutral-500 text-[10px] uppercase font-bold tracking-wider mt-0.5">{status}</Text>
           ) : null}
         </View>
 
-        <View className="flex-row gap-2">
-          <TouchableOpacity onPress={handleDiff}>
-            <Text className="text-[#8b949e] text-sm">Diff</Text>
+        <View className="flex-row gap-4">
+          <TouchableOpacity onPress={handleDiff} className="p-2 -mr-2">
+            <Text className="text-neutral-500 text-sm font-bold tracking-wide">Diff</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleSave} disabled={saving}>
-            <Text className="text-[#58a6ff] text-sm font-semibold">
-              {saving ? '...' : 'Save'}
+          <TouchableOpacity onPress={handleSave} disabled={saving} className="p-2 -mr-2">
+            <Text className={`text-sm font-bold tracking-wide ${saving ? 'text-neutral-400' : 'text-[#58a6ff]'}`}>
+              {saving ? 'Saving...' : 'Save'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -155,16 +156,16 @@ export default function EditorScreen() {
 
       {/* Diff overlay */}
       {showDiff ? (
-        <View className="flex-1">
-          <View className="flex-row items-center justify-between px-4 py-2 bg-[#161b22] border-b border-[#30363d]">
-            <Text className="text-[#e6edf3] text-sm font-semibold">Diff</Text>
+        <View className="flex-1 bg-white dark:bg-black z-10">
+          <View className="flex-row items-center justify-between px-5 py-3 bg-neutral-100 dark:bg-black border-b border-neutral-200 dark:border-zinc-800">
+            <Text className="text-black dark:text-neutral-100 text-sm font-bold uppercase tracking-wider">Diff</Text>
             <TouchableOpacity onPress={() => setShowDiff(false)}>
-              <Text className="text-[#58a6ff] text-sm">Close</Text>
+              <Text className="text-[#58a6ff] text-sm font-bold tracking-wide">Close</Text>
             </TouchableOpacity>
           </View>
-          <ScrollView className="flex-1 p-4">
+          <ScrollView className="flex-1 p-5">
             <Text
-              className="text-[#c9d1d9] text-xs"
+              className="text-neutral-700 dark:text-neutral-300 text-[13px] leading-relaxed"
               style={{ fontFamily: 'monospace' }}
             >
               {diffText}
@@ -173,9 +174,9 @@ export default function EditorScreen() {
         </View>
       ) : (
         <>
-          <ScrollView className="flex-1" keyboardShouldPersistTaps="always">
+          <ScrollView className="flex-1 bg-white dark:bg-black" keyboardShouldPersistTaps="always">
             <TextInput
-              className="text-[#c9d1d9] text-sm p-4"
+              className="text-black dark:text-neutral-200 text-[13px] p-5 leading-relaxed"
               style={{ fontFamily: 'monospace', minHeight: 400 }}
               value={content}
               onChangeText={setContent}
@@ -187,18 +188,18 @@ export default function EditorScreen() {
           </ScrollView>
 
           {/* Footer */}
-          <View className="flex-row items-center justify-between px-4 py-2 border-t border-[#30363d]">
-            <Text className="text-[#484f58] text-xs flex-1" numberOfLines={1}>
+          <View className="flex-row items-center justify-between px-5 py-3 border-t border-neutral-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 ">
+            <Text className="text-neutral-500 text-[11px] font-mono tracking-wider flex-1 mr-4" numberOfLines={1}>
               {file}
             </Text>
             {hasChanges && (
               <View className="flex-row gap-2">
                 <TouchableOpacity
-                  className="px-3 py-1.5 rounded-md bg-[#21262d]"
+                  className="px-4 py-2 rounded-lg bg-[#238636]/10 border border-[#238636]/30 "
                   onPress={handleSaveAndStage}
                   disabled={saving}
                 >
-                  <Text className="text-[#7ee787] text-xs font-semibold">
+                  <Text className="text-[#238636] dark:text-[#7ee787] text-[11px] font-bold uppercase tracking-wider">
                     Save & Stage
                   </Text>
                 </TouchableOpacity>

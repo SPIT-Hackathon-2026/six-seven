@@ -19,7 +19,7 @@ export default function AppBottomNav() {
   return (
     <View
       style={{ paddingBottom: Math.max(insets.bottom, 8) }}
-      className="absolute bottom-0 left-0 right-0 border-t border-[#30363d] bg-[#0d1117] px-2 pt-2"
+      className="absolute bottom-0 left-0 right-0 border-t border-neutral-200 dark:border-zinc-800 bg-white dark:bg-black px-2 pt-2"
     >
       <View className="flex-row items-center justify-between">
         {tabs.map((tab) => {
@@ -35,8 +35,8 @@ export default function AppBottomNav() {
                 numberOfLines={1}
                 className={
                   active
-                    ? 'text-[#e6edf3] text-[11px] mt-0.5'
-                    : 'text-[#8b949e] text-[11px] mt-0.5'
+                    ? 'text-black dark:text-white text-[11px] mt-0.5 font-medium'
+                    : 'text-neutral-400 text-[11px] mt-0.5 font-medium'
                 }
               >
                 {tab.label}

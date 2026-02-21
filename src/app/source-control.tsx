@@ -10,6 +10,7 @@ import {
   RefreshControl,
 } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
+import { Package, ArrowDownToLine, ArrowUpFromLine, ChevronLeft, ChevronUp, ChevronDown, Check, RefreshCw, X, CheckSquare, Square } from 'lucide-react-native'
 
 import { listRepos } from '@/services/repoService'
 import {
@@ -313,25 +314,25 @@ export default function SourceControlScreen() {
     return (
       <View
         key={file.filepath}
-        className="flex-row items-center py-2 px-2 border-b border-[#21262d]"
+        className="flex-row items-center py-2.5 px-3 border-b border-neutral-100 dark:border-zinc-800"
       >
         <TouchableOpacity
           onPress={() => handleToggleStage(file.filepath, file.staged)}
-          className="mr-2"
+          className="mr-3 ml-1"
         >
           <View
-            className="w-5 h-5 rounded border items-center justify-center"
+            className="w-5 h-5 rounded items-center justify-center border"
             style={{
-              borderColor: file.staged ? '#58a6ff' : '#30363d',
+              borderColor: file.staged ? '#58a6ff' : '#8b949e',
               backgroundColor: file.staged ? '#1f6feb33' : 'transparent',
             }}
           >
-            {file.staged && <Text className="text-[#58a6ff] text-xs">✓</Text>}
+            {file.staged && <Check size={14} color="#58a6ff" />}
           </View>
         </TouchableOpacity>
         <Text
           style={{ color }}
-          className="text-sm font-bold w-5 text-center mr-2"
+          className="text-sm font-bold w-6 text-center mr-2"
         >
           {icon}
         </Text>
@@ -339,7 +340,7 @@ export default function SourceControlScreen() {
           className="flex-1"
           onPress={() => handleViewDiff(file.filepath)}
         >
-          <Text className="text-[#c9d1d9] text-sm" numberOfLines={1}>
+          <Text className="text-black dark:text-neutral-200 text-sm font-medium" numberOfLines={1}>
             {file.filepath}
           </Text>
         </TouchableOpacity>
@@ -350,29 +351,31 @@ export default function SourceControlScreen() {
   // Diff overlay
   if (diffText !== null) {
     return (
-      <View className="flex-1 bg-[#0d1117]">
-        <View className="flex-row items-center justify-between px-5 py-4 border-b border-[#30363d]">
+      <View className="flex-1 bg-neutral-100 dark:bg-black w-full">
+        <View className="flex-row items-center justify-between px-5 py-4 border-b border-neutral-200 dark:border-zinc-800">
           <TouchableOpacity
+            className="flex-row items-center"
             onPress={() => {
               setDiffText(null)
               setDiffFile_(null)
             }}
           >
-            <Text className="text-[#58a6ff] text-base font-semibold">
-              ‹ Back
+            <ChevronLeft size={20} color="#58a6ff" />
+            <Text className="text-[#58a6ff] text-base font-semibold ml-1">
+              Back
             </Text>
           </TouchableOpacity>
           <Text
-            className="text-[#e6edf3] text-sm font-bold flex-1 text-center"
+            className="text-black dark:text-white text-sm font-bold flex-1 text-center"
             numberOfLines={1}
           >
             {diffFile_}
           </Text>
-          <View className="w-10" />
+          <View className="w-16" />
         </View>
-        <ScrollView className="flex-1 p-4">
+        <ScrollView className="flex-1 p-4 bg-white dark:bg-black">
           <Text
-            className="text-[#c9d1d9] text-xs font-mono"
+            className="text-black dark:text-neutral-300 text-xs font-mono leading-tight"
             style={{ fontFamily: 'monospace' }}
           >
             {diffText}
@@ -383,50 +386,53 @@ export default function SourceControlScreen() {
   }
 
   return (
-    <View className="flex-1 bg-[#0d1117]">
+    <View className="flex-1 bg-neutral-100 dark:bg-black w-full">
       {/* Header */}
-      <View className="flex-row items-center justify-between px-5 py-4 border-b border-[#30363d]">
-        <Text className="text-[#e6edf3] text-lg font-bold">Source Control</Text>
+      <View className="flex-row items-center justify-between px-5 py-4 border-b border-neutral-200 dark:border-zinc-800">
+        <Text className="text-black dark:text-white text-lg font-bold">Source Control</Text>
         <View className="flex-row gap-2">
           <TouchableOpacity
             onPress={() => {
               setShowStashList(!showStashList)
               if (!showStashList) refreshStashList()
             }}
-            className="px-3 py-1 rounded-md bg-[#21262d]"
+            className="px-3 py-1.5 rounded-md bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 flex-row items-center gap-1.5"
           >
-            <Text className="text-[#d2a8ff] text-xs">📦 Stashes</Text>
+            <Package size={14} color="#d2a8ff" />
+            <Text className="text-[#d2a8ff] text-xs font-medium">Stashes</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={handleStash}
-            className="px-3 py-1 rounded-md bg-[#21262d]"
+            className="px-3 py-1.5 rounded-md bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 flex-row items-center gap-1.5"
           >
-            <Text className="text-[#c9d1d9] text-xs">Stash</Text>
+            <ArrowDownToLine size={14} color="#8b949e" />
+            <Text className="text-neutral-600 dark:text-neutral-400 text-xs font-medium">Stash</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={handleStashPop}
-            className="px-3 py-1 rounded-md bg-[#21262d]"
+            className="px-3 py-1.5 rounded-md bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 flex-row items-center gap-1.5"
           >
-            <Text className="text-[#c9d1d9] text-xs">Pop</Text>
+            <ArrowUpFromLine size={14} color="#8b949e" />
+            <Text className="text-neutral-600 dark:text-neutral-400 text-xs font-medium">Pop</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Stash management panel */}
       {showStashList && selectedRepo && (
-        <View className="mx-5 mt-2 rounded-lg bg-[#161b22] border border-[#30363d] overflow-hidden">
-          <View className="flex-row items-center justify-between px-3 py-2 bg-[#21262d] border-b border-[#30363d]">
-            <Text className="text-[#e6edf3] text-sm font-semibold">
+        <View className="mx-5 mt-3 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden ">
+          <View className="flex-row items-center justify-between px-4 py-3 bg-neutral-100 dark:bg-black border-b border-neutral-200 dark:border-zinc-800">
+            <Text className="text-black dark:text-white text-sm font-semibold">
               Stash List ({stashes.length})
             </Text>
-            <View className="flex-row gap-2">
+            <View className="flex-row gap-4 items-center">
               {stashes.length > 0 && (
                 <TouchableOpacity onPress={handleStashClear}>
-                  <Text className="text-[#f85149] text-xs">Clear All</Text>
+                  <Text className="text-[#f85149] text-xs font-semibold">Clear All</Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity onPress={() => setShowStashList(false)}>
-                <Text className="text-[#8b949e] text-sm">✕</Text>
+                <X size={16} color="#8b949e" />
               </TouchableOpacity>
             </View>
           </View>
@@ -435,31 +441,31 @@ export default function SourceControlScreen() {
               <ActivityIndicator color="#58a6ff" size="small" />
             </View>
           ) : stashes.length === 0 ? (
-            <View className="px-3 py-4 items-center">
-              <Text className="text-[#484f58] text-sm">No stashes</Text>
+            <View className="px-3 py-5 items-center">
+              <Text className="text-neutral-500 text-sm">No stashes found</Text>
             </View>
           ) : (
             <ScrollView style={{ maxHeight: 300 }}>
               {stashes.map((s) => (
-                <View key={s.index} className="border-b border-[#21262d]">
+                <View key={s.index} className="border-b border-neutral-100 dark:border-zinc-800">
                   <TouchableOpacity
-                    className="px-3 py-2.5"
+                    className="px-4 py-3"
                     onPress={() => handleExpandStash(s.index)}
                   >
                     <View className="flex-row items-center justify-between">
                       <View className="flex-1">
                         <Text
-                          className="text-[#e6edf3] text-sm"
+                          className="text-black dark:text-neutral-100 text-sm font-medium"
                           numberOfLines={1}
                         >
                           stash@{'{' + s.index + '}'}: {s.message}
                         </Text>
-                        <View className="flex-row items-center gap-2 mt-0.5">
-                          <Text className="text-[#8b949e] text-xs">
+                        <View className="flex-row items-center gap-2 mt-1">
+                          <Text className="text-neutral-500 text-xs">
                             {s.fileCount} file{s.fileCount !== 1 ? 's' : ''}
                           </Text>
-                          <Text className="text-[#484f58] text-xs">·</Text>
-                          <Text className="text-[#8b949e] text-xs">
+                          <Text className="text-neutral-400 text-xs">·</Text>
+                          <Text className="text-neutral-500 text-xs">
                             {new Date(s.timestamp).toLocaleString()}
                           </Text>
                         </View>
@@ -467,15 +473,15 @@ export default function SourceControlScreen() {
                     </View>
 
                     {/* Action buttons */}
-                    <View className="flex-row gap-2 mt-2">
+                    <View className="flex-row gap-2 mt-3">
                       <TouchableOpacity
-                        className="px-2.5 py-1 rounded bg-[#238636]"
+                        className="px-3 py-1.5 rounded-md bg-[#238636]"
                         onPress={() => handleStashApply(s.index)}
                       >
-                        <Text className="text-white text-xs">Apply</Text>
+                        <Text className="text-white text-xs font-semibold">Apply</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        className="px-2.5 py-1 rounded bg-[#1f6feb]"
+                        className="px-3 py-1.5 rounded-md bg-[#1f6feb]"
                         onPress={async () => {
                           try {
                             await stashPop(selectedRepo!, s.index)
@@ -490,26 +496,26 @@ export default function SourceControlScreen() {
                           }
                         }}
                       >
-                        <Text className="text-white text-xs">Pop</Text>
+                        <Text className="text-white text-xs font-semibold">Pop</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        className="px-2.5 py-1 rounded bg-[#21262d] border border-[#30363d]"
+                        className="px-3 py-1.5 rounded-md bg-white dark:bg-black border border-neutral-200 dark:border-zinc-800"
                         onPress={() => handleStashDrop(s.index)}
                       >
-                        <Text className="text-[#f85149] text-xs">Drop</Text>
+                        <Text className="text-[#f85149] text-xs font-semibold">Drop</Text>
                       </TouchableOpacity>
                     </View>
 
                     {/* Expanded file list */}
                     {expandedStash === s.index && stashFiles.length > 0 && (
-                      <View className="mt-2 pt-2 border-t border-[#21262d]">
+                      <View className="mt-3 pt-3 border-t border-neutral-100 dark:border-zinc-800">
                         {stashFiles.map((f: any) => (
                           <View
                             key={f.filepath}
-                            className="flex-row items-center py-0.5"
+                            className="flex-row items-center py-1"
                           >
                             <Text
-                              className="text-xs font-bold w-4 mr-1"
+                              className="text-[10px] font-bold w-4 mr-1"
                               style={{
                                 color: f.deleted ? '#f85149' : '#7ee787',
                               }}
@@ -517,7 +523,7 @@ export default function SourceControlScreen() {
                               {f.deleted ? 'D' : 'M'}
                             </Text>
                             <Text
-                              className="text-[#c9d1d9] text-xs flex-1"
+                              className="text-neutral-600 dark:text-neutral-300 text-xs flex-1"
                               numberOfLines={1}
                             >
                               {f.filepath}
@@ -536,21 +542,21 @@ export default function SourceControlScreen() {
 
       {/* Repo picker */}
       <TouchableOpacity
-        className="mx-5 mt-3 px-4 py-2.5 rounded-lg bg-[#161b22] border border-[#30363d] flex-row items-center justify-between"
+        className="mx-5 mt-3 px-4 py-3 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 flex-row items-center justify-between "
         onPress={() => setShowRepoPicker(!showRepoPicker)}
       >
-        <Text className="text-[#e6edf3] font-semibold">
+        <Text className="text-black dark:text-white font-semibold">
           {selectedRepo ?? 'Select repo'}
         </Text>
-        <Text className="text-[#8b949e]">{showRepoPicker ? '▲' : '▼'}</Text>
+        {showRepoPicker ? <ChevronUp size={16} color="#8b949e" /> : <ChevronDown size={16} color="#8b949e" />}
       </TouchableOpacity>
       {showRepoPicker && (
-        <View className="mx-5 mt-1 rounded-lg bg-[#161b22] border border-[#30363d] max-h-40">
+        <View className="mx-5 mt-1 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 max-h-40 ">
           <ScrollView>
             {repos.map((r) => (
               <TouchableOpacity
                 key={r}
-                className="px-4 py-2.5 border-b border-[#21262d]"
+                className="px-4 py-3 border-b border-neutral-100 dark:border-zinc-800"
                 onPress={() => {
                   setSelectedRepo(r)
                   setShowRepoPicker(false)
@@ -560,7 +566,7 @@ export default function SourceControlScreen() {
                   className={
                     r === selectedRepo
                       ? 'text-[#58a6ff] font-semibold'
-                      : 'text-[#c9d1d9]'
+                      : 'text-neutral-500'
                   }
                 >
                   {r}
@@ -572,7 +578,7 @@ export default function SourceControlScreen() {
       )}
 
       {selectedRepo && (
-        <Text className="mx-5 mt-2 text-[#8b949e] text-xs">
+        <Text className="mx-5 mt-3 text-neutral-500 text-xs">
           Branch: <Text className="text-[#f0a65e] font-semibold">{branch}</Text>{' '}
           · {files.length} change{files.length !== 1 ? 's' : ''}
         </Text>
@@ -591,7 +597,7 @@ export default function SourceControlScreen() {
       >
         {!selectedRepo ? (
           <View className="mt-8 items-center">
-            <Text className="text-[#8b949e]">No Git repository selected</Text>
+            <Text className="text-neutral-500">No Git repository selected</Text>
           </View>
         ) : loading && files.length === 0 ? (
           <View className="mt-8 items-center">
@@ -602,52 +608,52 @@ export default function SourceControlScreen() {
             <Text className="text-[#7ee787] text-base font-semibold">
               ✓ Working tree clean
             </Text>
-            <Text className="text-[#8b949e] text-sm mt-1">
+            <Text className="text-neutral-500 text-sm mt-1">
               No uncommitted changes
             </Text>
           </View>
         ) : (
           <>
             {/* Commit box */}
-            <View className="rounded-lg bg-[#161b22] border border-[#30363d] p-3 mb-4">
+            <View className="rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 p-4 mb-5 ">
               <TextInput
-                className="text-[#e6edf3] text-sm min-h-[36px]"
+                className="text-black dark:text-white text-sm min-h-[40px] bg-neutral-50 dark:bg-black rounded-lg px-3 py-2 border border-neutral-200 dark:border-zinc-800"
                 placeholder="Commit message…"
-                placeholderTextColor="#484f58"
+                placeholderTextColor="#8b949e"
                 value={commitMsg}
                 onChangeText={setCommitMsg}
                 multiline
               />
-              <View className="flex-row gap-2 mt-2">
+              <View className="flex-row gap-3 mt-3">
                 <TouchableOpacity
-                  className="flex-1 py-2 rounded-md bg-[#1f6feb] items-center"
+                  className="flex-1 py-2.5 rounded-lg bg-[#1f6feb] items-center "
                   onPress={handleCommit}
                   disabled={committing}
                 >
                   {committing ? (
                     <ActivityIndicator color="#fff" size="small" />
                   ) : (
-                    <Text className="text-white text-sm font-semibold">
+                    <Text className="text-white text-sm font-bold">
                       Commit
                     </Text>
                   )}
                 </TouchableOpacity>
                 <TouchableOpacity
-                  className="py-2 px-4 rounded-md bg-[#21262d] items-center"
+                  className="py-2.5 px-5 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800 items-center justify-center "
                   onPress={handleStageAll}
                 >
-                  <Text className="text-[#c9d1d9] text-sm">Stage All</Text>
+                  <Text className="text-neutral-700 dark:text-neutral-300 text-sm font-semibold">Stage All</Text>
                 </TouchableOpacity>
               </View>
             </View>
 
             {/* Staged files */}
             {staged.length > 0 && (
-              <View className="mb-4">
-                <Text className="text-[#7ee787] text-xs font-bold uppercase tracking-wider mb-1">
+              <View className="mb-5">
+                <Text className="text-[#7ee787] text-xs font-bold uppercase tracking-wider mb-2 ml-1">
                   Staged ({staged.length})
                 </Text>
-                <View className="rounded-lg bg-[#161b22] border border-[#30363d] overflow-hidden">
+                <View className="rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden ">
                   {staged.map(renderFileRow)}
                 </View>
               </View>
@@ -655,11 +661,11 @@ export default function SourceControlScreen() {
 
             {/* Unstaged files */}
             {unstaged.length > 0 && (
-              <View>
-                <Text className="text-[#d29922] text-xs font-bold uppercase tracking-wider mb-1">
+              <View className="mb-5">
+                <Text className="text-[#d29922] text-xs font-bold uppercase tracking-wider mb-2 ml-1">
                   Changes ({unstaged.length})
                 </Text>
-                <View className="rounded-lg bg-[#161b22] border border-[#30363d] overflow-hidden">
+                <View className="rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden ">
                   {unstaged.map(renderFileRow)}
                 </View>
               </View>

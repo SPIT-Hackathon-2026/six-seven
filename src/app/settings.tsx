@@ -13,7 +13,8 @@ import { getFreeDiskSpace, REPO_BASE_PATH } from '@/utils/path';
 import { listRepos, deleteRepo } from '@/services/repoService'
 import { useRouter } from 'expo-router'
 import { setAuthenticated } from '@/utils/auth'
-import { User, HardDrive, Info, AlertTriangle, LogOut } from 'lucide-react-native'
+import { useColorScheme } from '@/hooks/use-color-scheme'
+import { User, HardDrive, Info, AlertTriangle, LogOut, Moon, Sun } from 'lucide-react-native'
 
 function formatBytes(bytes: number) {
   if (!bytes) return '0 B'
@@ -29,6 +30,7 @@ function formatBytes(bytes: number) {
 
 export default function SettingsScreen() {
   const router = useRouter()
+  const { colorScheme, setColorScheme } = useColorScheme()
   const [authorName, setAuthorName] = useState('')
   const [authorEmail, setAuthorEmail] = useState('')
   const [saved, setSaved] = useState(false)
@@ -95,45 +97,70 @@ export default function SettingsScreen() {
   }, [router])
 
   return (
-    <View className="flex-1 bg-[#0d1117]">
+    <View className="flex-1 bg-white dark:bg-black">
       {/* Header */}
-      <View className="px-5 py-4 border-b border-[#30363d]">
-        <Text className="text-[#e6edf3] text-lg font-bold">Settings</Text>
+      <View className="px-5 py-4 border-b border-neutral-200 dark:border-zinc-800">
+        <Text className="text-black dark:text-white text-lg font-bold">Settings</Text>
       </View>
 
       <ScrollView
         className="flex-1 px-5"
         contentContainerStyle={{ paddingBottom: 160 }}
       >
+        {/* Preferences */}
+        <View className="mt-2">
+          <View className="flex-row items-center mb-3">
+            {colorScheme === 'dark' ? <Moon size={16} color="#8b949e" /> : <Sun size={16} color="#8b949e" />}
+            <Text className="text-neutral-500 text-xs font-bold uppercase tracking-wider ml-2">
+              Preferences
+            </Text>
+          </View>
+          <View className="rounded-lg bg-neutral-100 dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 p-4 mb-6">
+            <View className="flex-row items-center justify-between">
+              <Text className="text-black dark:text-white text-sm font-medium">Dark Mode</Text>
+              <TouchableOpacity
+                className="w-12 h-6 rounded-full p-1"
+                style={{ backgroundColor: colorScheme === 'dark' ? '#2ea043' : '#d1d5db' }}
+                onPress={() => setColorScheme(colorScheme === 'dark' ? 'light' : 'dark')}
+              >
+                <View 
+                  className="w-4 h-4 bg-white rounded-full dark:translate-x-6 transition-transform" 
+                  style={{ transform: [{ translateX: colorScheme === 'dark' ? 24 : 0 }] }}
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
         {/* Git Author */}
-        <View className="mt-5">
+        <View className="mt-1">
           <View className="flex-row items-center mb-3">
             <User size={16} color="#8b949e" />
-            <Text className="text-[#8b949e] text-xs font-bold uppercase tracking-wider ml-2">
+            <Text className="text-neutral-500 text-xs font-bold uppercase tracking-wider ml-2">
               Git Author
             </Text>
           </View>
-          <View className="rounded-lg bg-[#161b22] border border-[#30363d] p-4">
-            <Text className="text-[#c9d1d9] text-sm mb-1.5">Name</Text>
+          <View className="rounded-lg bg-neutral-100 dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 p-4">
+            <Text className="text-neutral-900 dark:text-white text-sm mb-1.5 font-medium">Name</Text>
             <TextInput
-              className="bg-[#0d1117] text-[#e6edf3] px-3 py-2 rounded-md border border-[#30363d] text-sm"
+              className="bg-white dark:bg-black text-black dark:text-white px-3 py-2 rounded-md border border-neutral-200 dark:border-zinc-800 text-sm"
               value={authorName}
               onChangeText={setAuthorName}
               placeholder="Your Name"
-              placeholderTextColor="#484f58"
+              placeholderTextColor="#8b949e"
             />
-            <Text className="text-[#c9d1d9] text-sm mb-1.5 mt-3">Email</Text>
+            <Text className="text-neutral-900 dark:text-white text-sm mb-1.5 mt-3 font-medium">Email</Text>
             <TextInput
-              className="bg-[#0d1117] text-[#e6edf3] px-3 py-2 rounded-md border border-[#30363d] text-sm"
+              className="bg-white dark:bg-black text-black dark:text-white px-3 py-2 rounded-md border border-neutral-200 dark:border-zinc-800 text-sm"
               value={authorEmail}
               onChangeText={setAuthorEmail}
               placeholder="user@example.com"
-              placeholderTextColor="#484f58"
+              placeholderTextColor="#8b949e"
               keyboardType="email-address"
               autoCapitalize="none"
             />
             <TouchableOpacity
-              className="mt-3 py-2 rounded-md bg-[#1f6feb] items-center"
+              className="mt-4 py-2.5 rounded-md bg-[#1f6feb] items-center"
               onPress={handleSaveAuthor}
             >
               <Text className="text-white text-sm font-semibold">
@@ -147,26 +174,26 @@ export default function SettingsScreen() {
         <View className="mt-6">
           <View className="flex-row items-center mb-3">
             <HardDrive size={16} color="#8b949e" />
-            <Text className="text-[#8b949e] text-xs font-bold uppercase tracking-wider ml-2">
+            <Text className="text-neutral-500 text-xs font-bold uppercase tracking-wider ml-2">
               Storage
             </Text>
           </View>
-          <View className="rounded-lg bg-[#161b22] border border-[#30363d] p-4">
+          <View className="rounded-lg bg-neutral-100 dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 p-4">
             <View className="flex-row justify-between py-1.5">
-              <Text className="text-[#8b949e] text-sm">Free disk space</Text>
-              <Text className="text-[#e6edf3] text-sm font-semibold">
+              <Text className="text-neutral-500 text-sm font-medium">Free disk space</Text>
+              <Text className="text-black dark:text-white text-sm font-semibold">
                 {diskSpace}
               </Text>
             </View>
             <View className="flex-row justify-between py-1.5">
-              <Text className="text-[#8b949e] text-sm">Repositories</Text>
-              <Text className="text-[#e6edf3] text-sm font-semibold">
+              <Text className="text-neutral-500 text-sm font-medium">Repositories</Text>
+              <Text className="text-black dark:text-white text-sm font-semibold">
                 {repoCount}
               </Text>
             </View>
             <View className="py-1.5">
-              <Text className="text-[#8b949e] text-sm">Data path</Text>
-              <Text className="text-[#484f58] text-xs mt-0.5" numberOfLines={2}>
+              <Text className="text-neutral-500 text-sm font-medium">Data path</Text>
+              <Text className="text-neutral-400 text-xs mt-0.5" numberOfLines={2}>
                 {repoBasePath}
               </Text>
             </View>
@@ -177,26 +204,26 @@ export default function SettingsScreen() {
         <View className="mt-6">
           <View className="flex-row items-center mb-3">
             <Info size={16} color="#8b949e" />
-            <Text className="text-[#8b949e] text-xs font-bold uppercase tracking-wider ml-2">
+            <Text className="text-neutral-500 text-xs font-bold uppercase tracking-wider ml-2">
               About
             </Text>
           </View>
-          <View className="rounded-lg bg-[#161b22] border border-[#30363d] p-4">
+          <View className="rounded-lg bg-neutral-100 dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 p-4">
             <View className="flex-row justify-between py-1.5">
-              <Text className="text-[#8b949e] text-sm">App</Text>
-              <Text className="text-[#e6edf3] text-sm font-semibold">
+              <Text className="text-neutral-500 text-sm font-medium">App</Text>
+              <Text className="text-black dark:text-white text-sm font-semibold">
                 GitLane
               </Text>
             </View>
             <View className="flex-row justify-between py-1.5">
-              <Text className="text-[#8b949e] text-sm">Engine</Text>
-              <Text className="text-[#e6edf3] text-sm font-semibold">
+              <Text className="text-neutral-500 text-sm font-medium">Engine</Text>
+              <Text className="text-black dark:text-white text-sm font-semibold">
                 isomorphic-git
               </Text>
             </View>
             <View className="flex-row justify-between py-1.5">
-              <Text className="text-[#8b949e] text-sm">Platform</Text>
-              <Text className="text-[#e6edf3] text-sm font-semibold">
+              <Text className="text-neutral-500 text-sm font-medium">Platform</Text>
+              <Text className="text-black dark:text-white text-sm font-semibold">
                 Expo / React Native
               </Text>
             </View>
@@ -211,15 +238,15 @@ export default function SettingsScreen() {
               Danger Zone
             </Text>
           </View>
-          <View className="rounded-lg bg-[#161b22] border border-[#f8514933] p-4">
-            <Text className="text-[#c9d1d9] text-sm mb-3">
+          <View className="rounded-lg bg-red-50 dark:bg-[#160b0b] border border-[#f8514950] p-4">
+            <Text className="text-black dark:text-white text-sm mb-4 font-medium">
               Delete all local repositories. This action cannot be undone.
             </Text>
             <TouchableOpacity
-              className="py-2 rounded-md border border-[#f85149] items-center"
+              className="py-2.5 rounded-md bg-red-500 items-center"
               onPress={handleDeleteAll}
             >
-              <Text className="text-[#f85149] text-sm font-semibold">
+              <Text className="text-white text-sm font-bold">
                 Delete All Repos
               </Text>
             </TouchableOpacity>
@@ -228,7 +255,7 @@ export default function SettingsScreen() {
 
         {/* Logout Button */}
         <TouchableOpacity
-          className="mt-8 mb-6 py-3.5 items-center justify-center rounded-lg bg-[#21262d] border border-[#30363d] flex-row gap-2"
+          className="mt-8 mb-6 py-3.5 items-center justify-center rounded-lg bg-neutral-100 dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 flex-row gap-2"
           onPress={handleLogout}
         >
           <LogOut size={18} color="#ef4444" />

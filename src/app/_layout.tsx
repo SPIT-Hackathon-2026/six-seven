@@ -15,7 +15,7 @@ import { isAuthenticated } from '@/utils/auth'
 import '../global.css'
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme()
+  const { colorScheme } = useColorScheme()
   const segments = useSegments()
   const router = useRouter()
 
@@ -31,12 +31,12 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <View className="flex-1">
+      <View className="flex-1 bg-white dark:bg-black">
         <Stack
           screenOptions={{
-            headerStyle: { backgroundColor: '#0d1117' },
-            headerTintColor: '#e6edf3',
-            contentStyle: { backgroundColor: '#0d1117', paddingBottom: 88 },
+            headerStyle: { backgroundColor: colorScheme === 'dark' ? '#000000' : '#ffffff' },
+            headerTintColor: colorScheme === 'dark' ? '#ffffff' : '#000000',
+            contentStyle: { backgroundColor: colorScheme === 'dark' ? '#000000' : '#ffffff', paddingBottom: 88 },
           }}
         >
           <Stack.Screen name="login" options={{ headerShown: false, contentStyle: { paddingBottom: 0 } }} />
@@ -54,7 +54,7 @@ export default function RootLayout() {
         </Stack>
         {segments[0] !== 'login' && <AppBottomNav />}
       </View>
-      <StatusBar style="light" />
+      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
     </ThemeProvider>
   )
 }
