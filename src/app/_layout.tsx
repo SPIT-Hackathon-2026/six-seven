@@ -12,6 +12,14 @@ import 'react-native-reanimated'
 import AppBottomNav from '@/components/AppBottomNav'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import { isAuthenticated } from '@/utils/auth'
+import {
+  startNetworkMonitor,
+  stopNetworkMonitor,
+} from '@/services/networkService'
+import {
+  initOfflineSync,
+  destroyOfflineSync,
+} from '@/services/offlineSyncService'
 import '../global.css'
 
 export default function RootLayout() {
@@ -19,9 +27,19 @@ export default function RootLayout() {
   const segments = useSegments()
   const router = useRouter()
 
+  // Boot the offline-sync engine once
+  useEffect(() => {
+    startNetworkMonitor()
+    initOfflineSync()
+    return () => {
+      destroyOfflineSync()
+      stopNetworkMonitor()
+    }
+  }, [])
+
   useEffect(() => {
     const isLoginScreen = segments[0] === 'login'
-    
+
     if (!isAuthenticated && !isLoginScreen) {
       setTimeout(() => router.replace('/login'), 0)
     } else if (isAuthenticated && isLoginScreen) {
@@ -34,12 +52,20 @@ export default function RootLayout() {
       <View className="flex-1 bg-white dark:bg-black">
         <Stack
           screenOptions={{
-            headerStyle: { backgroundColor: colorScheme === 'dark' ? '#000000' : '#ffffff' },
+            headerStyle: {
+              backgroundColor: colorScheme === 'dark' ? '#000000' : '#ffffff',
+            },
             headerTintColor: colorScheme === 'dark' ? '#ffffff' : '#000000',
-            contentStyle: { backgroundColor: colorScheme === 'dark' ? '#000000' : '#ffffff', paddingBottom: 88 },
+            contentStyle: {
+              backgroundColor: colorScheme === 'dark' ? '#000000' : '#ffffff',
+              paddingBottom: 88,
+            },
           }}
         >
-          <Stack.Screen name="login" options={{ headerShown: false, contentStyle: { paddingBottom: 0 } }} />
+          <Stack.Screen
+            name="login"
+            options={{ headerShown: false, contentStyle: { paddingBottom: 0 } }}
+          />
           <Stack.Screen name="index" options={{ title: 'Repositories' }} />
           <Stack.Screen name="files" options={{ title: 'Files' }} />
           <Stack.Screen
@@ -50,7 +76,7 @@ export default function RootLayout() {
           <Stack.Screen name="testing" options={{ title: 'Test Runner' }} />
           <Stack.Screen name="transfer" options={{ title: 'Transfer' }} />
           <Stack.Screen name="settings" options={{ title: 'Settings' }} />
-        <Stack.Screen name="repo" options={{ headerShown: false }} />
+          <Stack.Screen name="repo" options={{ headerShown: false }} />
         </Stack>
         {segments[0] !== 'login' && <AppBottomNav />}
       </View>

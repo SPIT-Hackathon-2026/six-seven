@@ -188,7 +188,6 @@ const javaRules: [RegExp, string][] = [
   [/[{}()\[\];,.:?]/g, 'punctuation'],
   [/[+\-*/%=!<>&|^~]+/g, 'operator'],
 ]
-RULES['java'] = javaRules
 RULES['kt'] = javaRules
 RULES['gradle'] = javaRules
 

@@ -2,6 +2,7 @@ import * as git from 'isomorphic-git'
 import { fs } from '../utils/fsAdapter'
 import { createRepoFolder, getRepoPath } from './repoService'
 import * as FileSystem from 'expo-file-system/legacy'
+import { http, getOnAuth } from './githubAuth'
 
 // =====================================================================
 //  CONFIG
@@ -123,16 +124,20 @@ export async function getFileStatus(repoName, filepath) {
 
 function statusFromMatrix(head, workdir, stage) {
   // [H, W, S] – see isomorphic-git docs: statusMatrix
+  if (head === 0 && workdir === 0 && stage === 0) return 'unmodified' // absent everywhere
+  if (head === 0 && workdir === 0 && stage === 3) return '*added' // staged but deleted from workdir
   if (head === 0 && workdir === 2 && stage === 0) return 'untracked'
   if (head === 0 && workdir === 2 && stage === 2) return '*added'
   if (head === 0 && workdir === 2 && stage === 3) return '*added' // added + modified
   if (head === 1 && workdir === 1 && stage === 1) return 'unmodified'
+  if (head === 1 && workdir === 1 && stage === 0) return 'modified' // index cleared – workdir still matches HEAD content
+  if (head === 1 && workdir === 1 && stage === 3) return 'modified' // index stale after checkout – workdir matches HEAD
   if (head === 1 && workdir === 2 && stage === 1) return 'modified'
   if (head === 1 && workdir === 2 && stage === 2) return '*modified'
   if (head === 1 && workdir === 2 && stage === 3) return '*modified' // staged + further edits
   if (head === 1 && workdir === 0 && stage === 1) return 'deleted'
   if (head === 1 && workdir === 0 && stage === 0) return '*deleted'
-  if (head === 1 && workdir === 1 && stage === 0) return '*deleted' // edge
+  if (head === 1 && workdir === 0 && stage === 3) return '*deleted' // edge
   return 'unknown'
 }
 
@@ -207,7 +212,7 @@ export async function checkout(repoName, ref, options = {}) {
     fs,
     dir,
     ref,
-    force: options.force ?? false,
+    force: options.force ?? true,
     filepaths: options.filepaths,
   })
 }
@@ -474,18 +479,48 @@ export async function diffFile(repoName, filepath, refA = 'HEAD', refB = null) {
 }
 
 /**
- * List files changed between two refs (or HEAD vs working dir).
+ * List files changed in a commit (compares the commit's tree against its
+ * parent's tree).  When called with only one ref it defaults to that
+ * behaviour.  Returns [{ filepath, type }] where type is 'added',
+ * 'deleted' or 'modified'.
  */
 export async function diffSummary(repoName, refA = 'HEAD', refB = null) {
   const dir = getRepoPath(repoName)
-  const statusList = await git.statusMatrix({ fs, dir, ref: refA })
+
+  // Resolve the oid for refA
+  const oidA = await git.resolveRef({ fs, dir, ref: refA }).catch(() => refA)
+  const commitA = await git.readCommit({ fs, dir, oid: oidA })
+
+  let parentTree = {}
+  if (refB) {
+    // Explicit second ref – compare two commits
+    const oidB = await git.resolveRef({ fs, dir, ref: refB }).catch(() => refB)
+    parentTree = await readTreeFlat(dir, oidB)
+  } else if (commitA.commit.parent.length > 0) {
+    // Compare commit against its first parent
+    parentTree = await readTreeFlat(dir, commitA.commit.parent[0])
+  }
+  // else: initial commit – parentTree stays empty → everything is 'added'
+
+  const commitTree = await readTreeFlat(dir, oidA)
+
+  const allPaths = new Set([
+    ...Object.keys(parentTree),
+    ...Object.keys(commitTree),
+  ])
   const changes = []
 
-  for (const [filepath, head, workdir, stage] of statusList) {
-    const status = statusFromMatrix(head, workdir, stage)
-    if (status !== 'unmodified') {
-      changes.push({ filepath, status })
-    }
+  for (const filepath of allPaths) {
+    const inParent = parentTree[filepath] ?? null
+    const inCommit = commitTree[filepath] ?? null
+
+    if (inParent === inCommit) continue // unchanged
+
+    let type = 'modified'
+    if (!inParent) type = 'added'
+    else if (!inCommit) type = 'deleted'
+
+    changes.push({ filepath, type })
   }
   return changes
 }
@@ -810,6 +845,160 @@ export async function checkRepoHealth(repoName) {
     issues,
     branch,
   }
+}
+
+// =====================================================================
+//  REMOTE OPERATIONS (GitHub sync via PAT)
+// =====================================================================
+
+/** Add a remote to a repo. */
+export async function addRemote(repoName, remoteName, url) {
+  const dir = getRepoPath(repoName)
+  await git.addRemote({ fs, dir, remote: remoteName, url })
+}
+
+/** List all remotes. Returns [{ remote, url }]. */
+export async function listRemotes(repoName) {
+  const dir = getRepoPath(repoName)
+  return git.listRemotes({ fs, dir })
+}
+
+/** Remove a remote. */
+export async function deleteRemote(repoName, remoteName) {
+  const dir = getRepoPath(repoName)
+  await git.deleteRemote({ fs, dir, remote: remoteName })
+}
+
+/** Get the URL for a remote (defaults to 'origin'). */
+export async function getRemoteUrl(repoName, remoteName = 'origin') {
+  const remotes = await listRemotes(repoName)
+  const r = remotes.find((rm) => rm.remote === remoteName)
+  return r?.url ?? null
+}
+
+/**
+ * Fetch from a remote.
+ * @param {string} repoName
+ * @param {object} [options]  - { remote, ref, singleBranch, depth, onProgress }
+ */
+export async function fetchRemote(repoName, options = {}) {
+  const dir = getRepoPath(repoName)
+  const onAuth = await getOnAuth()
+  return git.fetch({
+    fs,
+    http,
+    dir,
+    remote: options.remote ?? 'origin',
+    ref: options.ref,
+    singleBranch: options.singleBranch ?? false,
+    depth: options.depth,
+    onAuth,
+    onProgress: options.onProgress,
+  })
+}
+
+/**
+ * Pull (fetch + fast-forward merge) from a remote.
+ * @param {string} repoName
+ * @param {object} [options]  - { remote, ref, onProgress }
+ */
+export async function pullRemote(repoName, options = {}) {
+  const dir = getRepoPath(repoName)
+  const onAuth = await getOnAuth()
+  const branch = options.ref ?? (await currentBranch(repoName)) ?? 'main'
+  return git.pull({
+    fs,
+    http,
+    dir,
+    remote: options.remote ?? 'origin',
+    ref: branch,
+    singleBranch: true,
+    author: _author,
+    onAuth,
+    onProgress: options.onProgress,
+  })
+}
+
+/**
+ * Push to a remote.
+ * @param {string} repoName
+ * @param {object} [options]  - { remote, ref, force, onProgress }
+ */
+export async function pushRemote(repoName, options = {}) {
+  const dir = getRepoPath(repoName)
+  const onAuth = await getOnAuth()
+  const branch = options.ref ?? (await currentBranch(repoName)) ?? 'main'
+  return git.push({
+    fs,
+    http,
+    dir,
+    remote: options.remote ?? 'origin',
+    ref: branch,
+    force: options.force ?? false,
+    onAuth,
+    onProgress: options.onProgress,
+  })
+}
+
+/**
+ * Check local vs remote divergence after a fetch.
+ * Returns { ahead, behind, localOid, remoteOid }
+ */
+export async function getRemoteDivergence(repoName, branch) {
+  const dir = getRepoPath(repoName)
+  const br = branch ?? (await currentBranch(repoName)) ?? 'main'
+
+  let localOid, remoteOid
+  try {
+    localOid = await git.resolveRef({ fs, dir, ref: br })
+  } catch {
+    localOid = null
+  }
+  try {
+    remoteOid = await git.resolveRef({ fs, dir, ref: `origin/${br}` })
+  } catch {
+    remoteOid = null
+  }
+
+  if (!localOid || !remoteOid)
+    return { ahead: 0, behind: 0, localOid, remoteOid }
+  if (localOid === remoteOid)
+    return { ahead: 0, behind: 0, localOid, remoteOid }
+
+  // Walk both histories to find common ancestor
+  const localLog = await git.log({ fs, dir, ref: br, depth: 100 })
+  const remoteLog = await git.log({ fs, dir, ref: `origin/${br}`, depth: 100 })
+
+  const localOids = new Set(localLog.map((c) => c.oid))
+  const remoteOids = new Set(remoteLog.map((c) => c.oid))
+
+  const ahead = localLog.filter((c) => !remoteOids.has(c.oid)).length
+  const behind = remoteLog.filter((c) => !localOids.has(c.oid)).length
+
+  return { ahead, behind, localOid, remoteOid }
+}
+
+/**
+ * Clone a repository from GitHub (or any HTTPS remote).
+ * Automatically sets up the 'origin' remote.
+ * @param {string} url - e.g. https://github.com/user/repo
+ * @param {string} repoName - local folder name
+ * @param {object} [options]  - { depth, singleBranch, onProgress }
+ */
+export async function cloneFromGitHub(url, repoName, options = {}) {
+  const dir = await createRepoFolder(repoName)
+  const onAuth = await getOnAuth()
+  await git.clone({
+    fs,
+    http,
+    dir,
+    url,
+    singleBranch: options.singleBranch ?? false,
+    depth: options.depth ?? undefined,
+    onAuth,
+    onProgress: options.onProgress,
+  })
+  return dir
 }
 
 // =====================================================================

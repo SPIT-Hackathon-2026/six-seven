@@ -10,7 +10,19 @@ import {
   RefreshControl,
 } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
-import { Package, ArrowDownToLine, ArrowUpFromLine, ChevronLeft, ChevronUp, ChevronDown, Check, RefreshCw, X, CheckSquare, Square } from 'lucide-react-native'
+import {
+  Package,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  ChevronLeft,
+  ChevronUp,
+  ChevronDown,
+  Check,
+  RefreshCw,
+  X,
+  CheckSquare,
+  Square,
+} from 'lucide-react-native'
 
 import { listRepos } from '@/services/repoService'
 import {
@@ -21,7 +33,11 @@ import {
   commit,
   currentBranch,
   diffFile,
+  getRemoteUrl,
+  getLog,
 } from '@/services/gitService'
+import { isGitHubLinked } from '@/services/githubAuth'
+import { enqueuePush } from '@/services/offlineSyncService'
 import {
   stash,
   stashList,
@@ -114,10 +130,7 @@ export default function SourceControlScreen() {
         .map((s: any) => ({
           filepath: s.filepath,
           status: s.status,
-          staged:
-            s.status === 'added' ||
-            s.status === 'modified' ||
-            s.status === 'deleted',
+          staged: s.status.startsWith('*'),
         }))
       setFiles(entries)
     } catch (err: any) {
@@ -175,8 +188,21 @@ export default function SourceControlScreen() {
     }
     setCommitting(true)
     try {
-      if (staged.length === 0) await stageAll(selectedRepo)
+      // Always stage all changes before committing to ensure the index is up to date
+      await stageAll(selectedRepo)
       await commit(selectedRepo, commitMsg.trim())
+
+      // Auto-enqueue push if repo has a remote
+      try {
+        const remoteUrl = await getRemoteUrl(selectedRepo)
+        const linked = await isGitHubLinked()
+        if (remoteUrl && linked) {
+          const log = await getLog(selectedRepo, { depth: 1 })
+          const oid = log[0]?.oid ?? 'unknown'
+          await enqueuePush(selectedRepo, branch, oid, commitMsg.trim())
+        }
+      } catch { /* silently skip auto-push queue */ }
+
       setCommitMsg('')
       Alert.alert('Success', 'Changes committed')
       await refreshStatus()
@@ -185,7 +211,7 @@ export default function SourceControlScreen() {
     } finally {
       setCommitting(false)
     }
-  }, [selectedRepo, commitMsg, staged.length, refreshStatus])
+  }, [selectedRepo, commitMsg, branch, refreshStatus])
 
   const handleStash = useCallback(async () => {
     if (!selectedRepo) return
@@ -340,7 +366,10 @@ export default function SourceControlScreen() {
           className="flex-1"
           onPress={() => handleViewDiff(file.filepath)}
         >
-          <Text className="text-black dark:text-neutral-200 text-sm font-medium" numberOfLines={1}>
+          <Text
+            className="text-black dark:text-neutral-200 text-sm font-medium"
+            numberOfLines={1}
+          >
             {file.filepath}
           </Text>
         </TouchableOpacity>
@@ -389,7 +418,9 @@ export default function SourceControlScreen() {
     <View className="flex-1 bg-neutral-100 dark:bg-black w-full">
       {/* Header */}
       <View className="flex-row items-center justify-between px-5 py-4 border-b border-neutral-200 dark:border-zinc-800">
-        <Text className="text-black dark:text-white text-lg font-bold">Source Control</Text>
+        <Text className="text-black dark:text-white text-lg font-bold">
+          Source Control
+        </Text>
         <View className="flex-row gap-2">
           <TouchableOpacity
             onPress={() => {
@@ -406,14 +437,18 @@ export default function SourceControlScreen() {
             className="px-3 py-1.5 rounded-md bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 flex-row items-center gap-1.5"
           >
             <ArrowDownToLine size={14} color="#8b949e" />
-            <Text className="text-neutral-600 dark:text-neutral-400 text-xs font-medium">Stash</Text>
+            <Text className="text-neutral-600 dark:text-neutral-400 text-xs font-medium">
+              Stash
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={handleStashPop}
             className="px-3 py-1.5 rounded-md bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 flex-row items-center gap-1.5"
           >
             <ArrowUpFromLine size={14} color="#8b949e" />
-            <Text className="text-neutral-600 dark:text-neutral-400 text-xs font-medium">Pop</Text>
+            <Text className="text-neutral-600 dark:text-neutral-400 text-xs font-medium">
+              Pop
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -428,7 +463,9 @@ export default function SourceControlScreen() {
             <View className="flex-row gap-4 items-center">
               {stashes.length > 0 && (
                 <TouchableOpacity onPress={handleStashClear}>
-                  <Text className="text-[#f85149] text-xs font-semibold">Clear All</Text>
+                  <Text className="text-[#f85149] text-xs font-semibold">
+                    Clear All
+                  </Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity onPress={() => setShowStashList(false)}>
@@ -447,7 +484,10 @@ export default function SourceControlScreen() {
           ) : (
             <ScrollView style={{ maxHeight: 300 }}>
               {stashes.map((s) => (
-                <View key={s.index} className="border-b border-neutral-100 dark:border-zinc-800">
+                <View
+                  key={s.index}
+                  className="border-b border-neutral-100 dark:border-zinc-800"
+                >
                   <TouchableOpacity
                     className="px-4 py-3"
                     onPress={() => handleExpandStash(s.index)}
@@ -478,7 +518,9 @@ export default function SourceControlScreen() {
                         className="px-3 py-1.5 rounded-md bg-[#238636]"
                         onPress={() => handleStashApply(s.index)}
                       >
-                        <Text className="text-white text-xs font-semibold">Apply</Text>
+                        <Text className="text-white text-xs font-semibold">
+                          Apply
+                        </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         className="px-3 py-1.5 rounded-md bg-[#1f6feb]"
@@ -496,13 +538,17 @@ export default function SourceControlScreen() {
                           }
                         }}
                       >
-                        <Text className="text-white text-xs font-semibold">Pop</Text>
+                        <Text className="text-white text-xs font-semibold">
+                          Pop
+                        </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         className="px-3 py-1.5 rounded-md bg-white dark:bg-black border border-neutral-200 dark:border-zinc-800"
                         onPress={() => handleStashDrop(s.index)}
                       >
-                        <Text className="text-[#f85149] text-xs font-semibold">Drop</Text>
+                        <Text className="text-[#f85149] text-xs font-semibold">
+                          Drop
+                        </Text>
                       </TouchableOpacity>
                     </View>
 
@@ -548,7 +594,11 @@ export default function SourceControlScreen() {
         <Text className="text-black dark:text-white font-semibold">
           {selectedRepo ?? 'Select repo'}
         </Text>
-        {showRepoPicker ? <ChevronUp size={16} color="#8b949e" /> : <ChevronDown size={16} color="#8b949e" />}
+        {showRepoPicker ? (
+          <ChevronUp size={16} color="#8b949e" />
+        ) : (
+          <ChevronDown size={16} color="#8b949e" />
+        )}
       </TouchableOpacity>
       {showRepoPicker && (
         <View className="mx-5 mt-1 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 max-h-40 ">
@@ -633,16 +683,16 @@ export default function SourceControlScreen() {
                   {committing ? (
                     <ActivityIndicator color="#fff" size="small" />
                   ) : (
-                    <Text className="text-white text-sm font-bold">
-                      Commit
-                    </Text>
+                    <Text className="text-white text-sm font-bold">Commit</Text>
                   )}
                 </TouchableOpacity>
                 <TouchableOpacity
                   className="py-2.5 px-5 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800 items-center justify-center "
                   onPress={handleStageAll}
                 >
-                  <Text className="text-neutral-700 dark:text-neutral-300 text-sm font-semibold">Stage All</Text>
+                  <Text className="text-neutral-700 dark:text-neutral-300 text-sm font-semibold">
+                    Stage All
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>

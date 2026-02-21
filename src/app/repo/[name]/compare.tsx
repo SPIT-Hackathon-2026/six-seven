@@ -406,16 +406,16 @@ export default function CompareScreen() {
                       <Text
                         className="text-sm font-extrabold w-6 text-center "
                         style={{
-                          color: f.status.includes('added')
+                          color: f.type === 'added'
                             ? '#7ee787'
-                            : f.status.includes('deleted')
+                            : f.type === 'deleted'
                               ? '#f85149'
                               : '#d29922',
                         }}
                       >
-                        {f.status.includes('added')
+                        {f.type === 'added'
                           ? '+'
-                          : f.status.includes('deleted')
+                          : f.type === 'deleted'
                             ? '−'
                             : '~'}
                       </Text>
