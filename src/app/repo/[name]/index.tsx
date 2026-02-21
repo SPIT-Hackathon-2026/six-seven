@@ -42,6 +42,8 @@ import {
   Github,
   BarChart3,
   ShieldCheck,
+  Search,
+  MessageCircle,
 } from 'lucide-react-native';
 import {
   currentBranch,
@@ -927,19 +929,40 @@ export default function RepoDetailScreen() {
   return (
     <View className="flex-1 bg-neutral-100 dark:bg-black">
       {/* ── Header ── */}
-      <View className="flex-row items-center justify-between px-4 pt-14 pb-4 border-b border-neutral-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
-        <TouchableOpacity onPress={() => router.back()} className="p-2">
-          <ChevronLeft size={24} color="#58a6ff" />
-        </TouchableOpacity>
-        <View className="flex-1 items-center">
-          <Text className="text-black dark:text-neutral-100 text-lg font-bold">
-            {name}
-          </Text>
-          <Text className="text-neutral-500 text-xs">{repoSize}</Text>
+      <View className="px-5 pt-14 pb-4 border-b border-neutral-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex-row items-center justify-between">
+        <View className="flex-row items-center gap-3 max-w-[70%]">
+          <TouchableOpacity onPress={() => router.back()} className="p-1 -ml-1">
+            <ChevronLeft size={24} color="#8b949e" />
+          </TouchableOpacity>
+          <View>
+            <Text
+              className="text-black dark:text-neutral-100 text-lg font-bold"
+              numberOfLines={1}
+            >
+              {name}
+            </Text>
+            {ghLinked && (
+              <View className="flex-row items-center mt-0.5">
+                <Github size={12} color="#8b949e" />
+                <Text className="text-neutral-500 text-xs ml-1">GitHub Connected</Text>
+              </View>
+            )}
+          </View>
         </View>
-        <TouchableOpacity onPress={handleDeleteRepo} className="p-2">
-          <Trash2 size={20} color="#f85149" />
-        </TouchableOpacity>
+        <View className="flex-row items-center gap-3">
+          <TouchableOpacity
+            className="w-9 h-9 items-center justify-center rounded-full bg-neutral-100 dark:bg-zinc-800"
+            onPress={() => router.push({ pathname: '/repo/[name]/chat', params: { name } } as any)}
+          >
+            <MessageCircle size={18} color="#8b949e" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            className="w-9 h-9 items-center justify-center rounded-full bg-neutral-100 dark:bg-zinc-800"
+            onPress={() => router.push({ pathname: '/repo/[name]/search', params: { name } } as any)}
+          >
+            <Search size={18} color="#8b949e" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── Branch selector row ── */}

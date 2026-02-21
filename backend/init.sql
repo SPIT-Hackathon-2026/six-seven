@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS messages (
+  id SERIAL PRIMARY KEY,
+  repo_id VARCHAR(255) NOT NULL,
+  author_name VARCHAR(255) NOT NULL,
+  text TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_repo_id ON messages(repo_id);
