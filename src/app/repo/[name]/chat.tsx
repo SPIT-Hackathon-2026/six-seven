@@ -10,8 +10,9 @@ import {
   ActivityIndicator,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { ArrowLeft, Send, Trash2 } from 'lucide-react-native'
+import { ArrowLeft, Send, Trash2, Clock } from 'lucide-react-native'
 import { io, Socket } from 'socket.io-client'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 
 import Constants from 'expo-constants'
 import { getAuthor } from '@/services/gitService'
@@ -29,6 +30,7 @@ type Message = {
   text: string
   created_at: string
   client_id?: string
+  is_pending?: boolean
 }
 
 export default function RepoChatScreen() {
@@ -46,7 +48,9 @@ export default function RepoChatScreen() {
   
   // Unique persistent installation ID per device
   const myClientId = Constants.installationId || Constants.sessionId
+  const QUEUE_KEY = `@chat_queue_${name}`
 
+  // Ensure state respects connected status correctly when updating text input
   useEffect(() => {
     if (!name) return
 
@@ -88,22 +92,71 @@ export default function RepoChatScreen() {
     return () => {
       socket.disconnect()
     }
-  }, [name])
+  }, [name, QUEUE_KEY])
 
-  const handleSend = useCallback(() => {
+  // Sync queue when connection is established
+  useEffect(() => {
+    if (connected && socketRef.current) {
+      AsyncStorage.getItem(QUEUE_KEY).then(queueStr => {
+        if (!queueStr) return
+        const queue: Message[] = JSON.parse(queueStr)
+        if (queue.length > 0) {
+          queue.forEach(msg => {
+            socketRef.current?.emit('send_message', {
+              repoId: name,
+              authorName: msg.author_name,
+              text: msg.text,
+              clientId: msg.client_id,
+              clientMsgId: msg.id // Optional: use this to prevent duplicates if server is smart
+            })
+          })
+          AsyncStorage.removeItem(QUEUE_KEY)
+          // Update local UI to remove pending flags (server will also broadcast them back)
+          setMessages(prev => prev.map(m => m.is_pending ? { ...m, is_pending: false } : m))
+        }
+      })
+    }
+  }, [connected, name, QUEUE_KEY])
+
+  const handleSend = useCallback(async () => {
     const text = inputText.trim()
-    if (!text || !socketRef.current || !connected) return
+    if (!text || !socketRef.current) return
 
     setInputText('')
 
-    // Emit to server
-    socketRef.current.emit('send_message', {
-      repoId: name,
-      authorName,
-      text,
-      clientId: myClientId,
-    })
-  }, [inputText, name, authorName, connected, myClientId])
+    if (connected) {
+      // Emit to server natively
+      socketRef.current.emit('send_message', {
+        repoId: name,
+        authorName,
+        text,
+        clientId: myClientId,
+      })
+    } else {
+      // Offline: Enqueue locally
+      const pendingMsg: Message = {
+        id: Date.now(), // Temporary ID
+        repo_id: name,
+        author_name: authorName,
+        text,
+        created_at: new Date().toISOString(),
+        client_id: myClientId,
+        is_pending: true
+      }
+      
+      setMessages(prev => [...prev, pendingMsg])
+      
+      try {
+        const queueStr = await AsyncStorage.getItem(QUEUE_KEY)
+        const queue: Message[] = queueStr ? JSON.parse(queueStr) : []
+        queue.push(pendingMsg)
+        await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(queue))
+        setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100)
+      } catch (err) {
+        console.warn('Failed to enqueue message', err)
+      }
+    }
+  }, [inputText, name, authorName, connected, myClientId, QUEUE_KEY])
 
   const handleClearChat = useCallback(() => {
     if (!name || !connected) return
@@ -195,9 +248,14 @@ export default function RepoChatScreen() {
                           : 'bg-neutral-100 dark:bg-zinc-800 rounded-tl-sm border border-neutral-200 dark:border-zinc-700'
                       }`}
                     >
-                      <Text className={`text-[15px] leading-snug ${isMe ? 'text-white' : 'text-black dark:text-white'}`}>
-                        {msg.text}
-                      </Text>
+                      <View className="flex-row items-end gap-1.5">
+                        <Text className={`text-[15px] leading-snug ${isMe ? 'text-white' : 'text-black dark:text-white'}`}>
+                          {msg.text}
+                        </Text>
+                        {msg.is_pending && (
+                          <Clock size={10} color="#ffffff88" style={{ marginBottom: 2 }} />
+                        )}
+                      </View>
                     </View>
                   </View>
                 </View>
@@ -218,11 +276,11 @@ export default function RepoChatScreen() {
           multiline
         />
         <TouchableOpacity 
-          className={`w-11 h-11 rounded-full items-center justify-center ${inputText.trim() && connected ? 'bg-[#2ea043]' : 'bg-neutral-200 dark:bg-zinc-800'}`}
+          className={`w-11 h-11 rounded-full items-center justify-center ${inputText.trim() ? 'bg-[#2ea043]' : 'bg-neutral-200 dark:bg-zinc-800'}`}
           onPress={handleSend}
-          disabled={!inputText.trim() || !connected}
+          disabled={!inputText.trim()}
         >
-          <Send size={18} color={inputText.trim() && connected ? '#fff' : '#8b949e'} style={{ marginLeft: 2 }} />
+          <Send size={18} color={inputText.trim() ? '#fff' : '#8b949e'} style={{ marginLeft: 2 }} />
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
