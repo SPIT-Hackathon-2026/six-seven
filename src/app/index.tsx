@@ -1,9 +1,28 @@
 import { useCallback, useMemo, useState } from 'react'
-import { View, Text, TouchableOpacity, ScrollView, Alert } from 'react-native'
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+  TextInput,
+  ActivityIndicator,
+  RefreshControl,
+} from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
 
-import { currentBranch, getStatus, initRepo } from '@/services/gitService'
-import { getRepoSize, listRepos } from '@/services/repoService'
+import {
+  currentBranch,
+  getStatus,
+  initRepo,
+  duplicateRepo,
+} from '@/services/gitService'
+import {
+  getRepoSize,
+  listRepos,
+  deleteRepo,
+  renameRepo,
+} from '@/services/repoService'
 
 type RepoCard = {
   name: string
@@ -12,6 +31,7 @@ type RepoCard = {
   statusColor: string
   sizeText: string
   ageText: string
+  isGitRepo: boolean
 }
 
 function formatBytes(bytes: number) {
@@ -42,6 +62,10 @@ export default function HomeScreen() {
   const router = useRouter()
   const [repos, setRepos] = useState<RepoCard[]>([])
   const [loading, setLoading] = useState(false)
+  const [showInitDialog, setShowInitDialog] = useState(false)
+  const [initName, setInitName] = useState('')
+  const [showDupDialog, setShowDupDialog] = useState<string | null>(null)
+  const [dupName, setDupName] = useState('')
 
   const refreshRepos = useCallback(async () => {
     setLoading(true)
@@ -55,15 +79,18 @@ export default function HomeScreen() {
             getRepoSize(repo.name).catch(() => 0),
           ])
 
-          const isModified = statuses.some((item) => item.status !== 'unmodified')
+          const isModified = statuses.some(
+            (item: any) => item.status !== 'unmodified',
+          )
 
           return {
             name: repo.name,
             branch: branch ?? 'main',
             statusText: isModified ? 'Modified' : 'Clean',
-            statusColor: isModified ? '#7ee787' : '#7ee787',
+            statusColor: isModified ? '#d29922' : '#7ee787',
             sizeText: formatBytes(size),
             ageText: formatAge(),
+            isGitRepo: repo.isGitRepo,
           }
         }),
       )
@@ -85,14 +112,81 @@ export default function HomeScreen() {
   )
 
   const handleInit = useCallback(async () => {
-    const repoName = `Repo-${Date.now().toString().slice(-5)}`
+    const repoName =
+      initName.trim() || `Repo-${Date.now().toString().slice(-5)}`
     try {
       await initRepo(repoName)
+      setShowInitDialog(false)
+      setInitName('')
       await refreshRepos()
     } catch (err: any) {
       Alert.alert('Init failed', err?.message ?? 'Could not initialize repo.')
     }
-  }, [refreshRepos])
+  }, [initName, refreshRepos])
+
+  const handleDelete = useCallback(
+    (repoName: string) => {
+      Alert.alert('Delete Repository', `Permanently delete "${repoName}"?`, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteRepo(repoName)
+              await refreshRepos()
+            } catch (err: any) {
+              Alert.alert('Error', err?.message ?? 'Delete failed')
+            }
+          },
+        },
+      ])
+    },
+    [refreshRepos],
+  )
+
+  const handleDuplicate = useCallback(async () => {
+    if (!showDupDialog) return
+    const newName = dupName.trim() || `${showDupDialog}-copy`
+    try {
+      await duplicateRepo(showDupDialog, newName)
+      setShowDupDialog(null)
+      setDupName('')
+      Alert.alert('Duplicated', `"${showDupDialog}" → "${newName}"`)
+      await refreshRepos()
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Duplicate failed')
+    }
+  }, [showDupDialog, dupName, refreshRepos])
+
+  const showRepoActions = useCallback(
+    (repoName: string) => {
+      Alert.alert(repoName, 'Choose an action', [
+        {
+          text: 'Open',
+          onPress: () =>
+            router.push({
+              pathname: '/repo/[name]',
+              params: { name: repoName },
+            } as any),
+        },
+        {
+          text: 'Duplicate',
+          onPress: () => {
+            setShowDupDialog(repoName)
+            setDupName(`${repoName}-copy`)
+          },
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => handleDelete(repoName),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ])
+    },
+    [router, handleDelete],
+  )
 
   return (
     <View className="flex-1 bg-[#050b16]">
@@ -122,14 +216,11 @@ export default function HomeScreen() {
 
       <View className="px-5 pt-4 flex-row gap-3">
         <TouchableOpacity
-          className="flex-1 py-3 rounded-xl bg-[#1f6feb] items-center"
-          onPress={() => Alert.alert('Clone', 'Clone flow can be added next.')}
-        >
-          <Text className="text-[#f0f6fc] text-lg font-bold">+ Clone</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
           className="flex-1 py-3 rounded-xl bg-[#21262d] items-center"
-          onPress={handleInit}
+          onPress={() => {
+            setShowInitDialog(true)
+            setInitName('')
+          }}
         >
           <Text className="text-[#f0f6fc] text-lg font-bold">+ Init</Text>
         </TouchableOpacity>
@@ -141,45 +232,138 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Init repo dialog */}
+      {showInitDialog && (
+        <View className="mx-5 mt-3 rounded-xl bg-[#161b22] border border-[#30363d] p-4">
+          <Text className="text-[#e6edf3] text-sm font-semibold mb-2">
+            New Repository
+          </Text>
+          <TextInput
+            className="bg-[#0d1117] text-[#e6edf3] px-3 py-2 rounded-md border border-[#30363d] text-sm"
+            value={initName}
+            onChangeText={setInitName}
+            placeholder="repository-name"
+            placeholderTextColor="#484f58"
+            autoFocus
+          />
+          <View className="flex-row gap-2 mt-3">
+            <TouchableOpacity
+              className="flex-1 py-2 rounded-md bg-[#1f6feb] items-center"
+              onPress={handleInit}
+            >
+              <Text className="text-white text-sm font-semibold">Create</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="py-2 px-4 rounded-md bg-[#21262d] items-center"
+              onPress={() => setShowInitDialog(false)}
+            >
+              <Text className="text-[#c9d1d9] text-sm">Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Duplicate dialog */}
+      {showDupDialog && (
+        <View className="mx-5 mt-3 rounded-xl bg-[#161b22] border border-[#30363d] p-4">
+          <Text className="text-[#e6edf3] text-sm font-semibold mb-2">
+            Duplicate "{showDupDialog}"
+          </Text>
+          <TextInput
+            className="bg-[#0d1117] text-[#e6edf3] px-3 py-2 rounded-md border border-[#30363d] text-sm"
+            value={dupName}
+            onChangeText={setDupName}
+            placeholder="new-repo-name"
+            placeholderTextColor="#484f58"
+            autoFocus
+          />
+          <View className="flex-row gap-2 mt-3">
+            <TouchableOpacity
+              className="flex-1 py-2 rounded-md bg-[#1f6feb] items-center"
+              onPress={handleDuplicate}
+            >
+              <Text className="text-white text-sm font-semibold">
+                Duplicate
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="py-2 px-4 rounded-md bg-[#21262d] items-center"
+              onPress={() => setShowDupDialog(null)}
+            >
+              <Text className="text-[#c9d1d9] text-sm">Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       <Text className="px-5 pt-3 text-[#8b949e] text-xs uppercase tracking-wider">
         Repositories · {repoCountLabel}
       </Text>
 
-      <ScrollView className="flex-1 px-5 pt-2" contentContainerStyle={{ paddingBottom: 120 }}>
+      <ScrollView
+        className="flex-1 px-5 pt-2"
+        contentContainerStyle={{ paddingBottom: 120 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={loading}
+            onRefresh={refreshRepos}
+            tintColor="#58a6ff"
+          />
+        }
+      >
         {loading && repos.length === 0 ? (
           <View className="mt-3 rounded-2xl border border-[#30363d] bg-[#111827] p-4">
             <Text className="text-[#8b949e]">Loading repositories…</Text>
           </View>
         ) : repos.length === 0 ? (
           <View className="mt-3 rounded-2xl border border-[#30363d] bg-[#111827] p-4">
-            <Text className="text-[#e6edf3] text-base font-semibold">No repositories yet</Text>
-            <Text className="text-[#8b949e] mt-1">Use + Init or Import to get started.</Text>
+            <Text className="text-[#e6edf3] text-base font-semibold">
+              No repositories yet
+            </Text>
+            <Text className="text-[#8b949e] mt-1">
+              Use + Init or Import to get started.
+            </Text>
           </View>
         ) : (
           repos.map((repo) => (
             <TouchableOpacity
               key={repo.name}
               className="mt-3 rounded-2xl border border-[#30363d] bg-[#111827] p-4 active:bg-[#1c2333]"
-              onPress={() => router.push({
-                pathname: '/repo/[name]',
-                params: { name: repo.name }
-              } as any)}
+              onPress={() =>
+                router.push({
+                  pathname: '/repo/[name]',
+                  params: { name: repo.name },
+                } as any)
+              }
+              onLongPress={() => showRepoActions(repo.name)}
             >
               <View className="flex-row items-center justify-between">
                 <View className="flex-row items-center gap-2">
-                  <Text className="text-[#c9d1d9] text-lg">📁</Text>
-                  <Text className="text-[#f0f6fc] text-[28px] font-extrabold">{repo.name}</Text>
+                  <Text className="text-[#c9d1d9] text-lg">
+                    {repo.isGitRepo ? '📁' : '📂'}
+                  </Text>
+                  <Text className="text-[#f0f6fc] text-[28px] font-extrabold">
+                    {repo.name}
+                  </Text>
                 </View>
                 <Text className="text-[#8b949e] text-xl">›</Text>
               </View>
 
-              <Text className="text-[#c9d1d9] text-2xl mt-2 font-semibold">Branch: {repo.branch}</Text>
+              <Text className="text-[#c9d1d9] text-2xl mt-2 font-semibold">
+                Branch: {repo.branch}
+              </Text>
 
               <View className="flex-row items-center mt-2">
-                <Text style={{ color: repo.statusColor }} className="text-2xl font-semibold">
+                <Text
+                  style={{ color: repo.statusColor }}
+                  className="text-2xl font-semibold"
+                >
                   {repo.statusText}
                 </Text>
-                <Text className="text-[#8b949e] text-2xl"> · {repo.sizeText} · {repo.ageText}</Text>
+                <Text className="text-[#8b949e] text-2xl">
+                  {' '}
+                  · {repo.sizeText} · {repo.ageText}
+                </Text>
               </View>
             </TouchableOpacity>
           ))
