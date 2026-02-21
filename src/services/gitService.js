@@ -898,25 +898,53 @@ export async function fetchRemote(repoName, options = {}) {
 }
 
 /**
- * Pull (fetch + fast-forward merge) from a remote.
- * @param {string} repoName
- * @param {object} [options]  - { remote, ref, onProgress }
+ * Pull (fetch + merge) from a remote.
+ * Unlike git.pull(), this supports both fast-forward and real merge commits.
+ *
+ * Returns { status, oid, conflicts }
+ *  - status: 'up-to-date' | 'fast-forward' | 'merged' | 'conflict'
+ *  - conflicts: array of filepaths when status === 'conflict'
  */
 export async function pullRemote(repoName, options = {}) {
   const dir = getRepoPath(repoName)
-  const onAuth = await getOnAuth()
+  const remote = options.remote ?? 'origin'
   const branch = options.ref ?? (await currentBranch(repoName)) ?? 'main'
-  return git.pull({
-    fs,
-    http,
-    dir,
-    remote: options.remote ?? 'origin',
+
+  // Step 1: Fetch latest from remote
+  await fetchRemote(repoName, {
+    remote,
     ref: branch,
     singleBranch: true,
-    author: _author,
-    onAuth,
     onProgress: options.onProgress,
   })
+
+  // Step 2: Check if we're already up to date
+  const localOid = await git.resolveRef({ fs, dir, ref: branch }).catch(() => null)
+  const remoteRef = `${remote}/${branch}`
+  const remoteOid = await git.resolveRef({ fs, dir, ref: remoteRef }).catch(() => null)
+
+  if (!remoteOid) {
+    return { status: 'up-to-date', oid: localOid, conflicts: null }
+  }
+
+  if (localOid === remoteOid) {
+    return { status: 'up-to-date', oid: localOid, conflicts: null }
+  }
+
+  // Step 3: Try merge (handles both fast-forward and real merges)
+  const mergeResult = await mergeBranch(repoName, remoteRef, {
+    author: options.author ?? _author,
+  })
+
+  if (mergeResult.conflicts && mergeResult.conflicts.length > 0) {
+    return { status: 'conflict', oid: null, conflicts: mergeResult.conflicts }
+  }
+
+  return {
+    status: mergeResult.fastForward ? 'fast-forward' : 'merged',
+    oid: mergeResult.oid,
+    conflicts: null,
+  }
 }
 
 /**

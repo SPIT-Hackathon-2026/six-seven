@@ -481,7 +481,18 @@ export default function RepoDetailScreen() {
               onPress: async () => {
                 setSyncing('pull')
                 try {
-                  await pullRemote(name)
+                  const pullResult = await pullRemote(name)
+                  if (pullResult?.status === 'conflict' && (pullResult.conflicts?.length ?? 0) > 0) {
+                    router.push({
+                      pathname: '/repo/[name]/conflicts' as any,
+                      params: {
+                        name,
+                        theirBranch: `origin/${branch}`,
+                        conflicts: JSON.stringify(pullResult.conflicts),
+                      },
+                    })
+                    return
+                  }
                   await pushRemote(name)
                   Alert.alert('Synced', 'Pulled and pushed successfully')
                   await loadRepoData()
@@ -527,8 +538,19 @@ export default function RepoDetailScreen() {
     }
     setSyncing('pull')
     try {
-      await pullRemote(name)
-      Alert.alert('Pulled', `Pulled from origin/${branch}`)
+      const pullResult = await pullRemote(name)
+      if (pullResult?.status === 'conflict' && (pullResult.conflicts?.length ?? 0) > 0) {
+        router.push({
+          pathname: '/repo/[name]/conflicts' as any,
+          params: {
+            name,
+            theirBranch: `origin/${branch}`,
+            conflicts: JSON.stringify(pullResult.conflicts),
+          },
+        })
+        return
+      }
+      Alert.alert('Pulled', `Pulled from origin/${branch} (${pullResult?.status ?? 'done'})`)
       await loadRepoData()
     } catch (err: any) {
       if (err?.message?.includes('conflict') || err?.message?.includes('merge')) {

@@ -283,19 +283,10 @@ export async function syncRepo(repoName) {
 
     // 3. Pull if needed (this handles fast-forward + merge)
     if (needsPull) {
-      try {
-        await pullRemote(repoName, { ref: branch })
-      } catch (pullErr) {
-        // If pull fails with merge conflict, surface it
-        if (
-          pullErr?.message?.includes('conflict') ||
-          pullErr?.message?.includes('merge') ||
-          pullErr?.code === 'MergeConflictError'
-        ) {
-          _emit('conflict', { repoName, branch, error: pullErr.message })
-          return { status: 'conflict', detail: pullErr.message }
-        }
-        throw pullErr
+      const pullResult = await pullRemote(repoName, { ref: branch })
+      if (pullResult.status === 'conflict') {
+        _emit('conflict', { repoName, branch, conflicts: pullResult.conflicts })
+        return { status: 'conflict', detail: 'Merge conflicts detected', conflicts: pullResult.conflicts }
       }
     }
 
@@ -311,7 +302,11 @@ export async function syncRepo(repoName) {
         ) {
           // Try pull first, then push again
           try {
-            await pullRemote(repoName, { ref: branch })
+            const retryPull = await pullRemote(repoName, { ref: branch })
+            if (retryPull.status === 'conflict') {
+              _emit('conflict', { repoName, branch, conflicts: retryPull.conflicts })
+              return { status: 'conflict', detail: 'Merge conflicts detected', conflicts: retryPull.conflicts }
+            }
             await pushRemote(repoName, { ref: branch })
           } catch (retryErr) {
             _emit('conflict', { repoName, branch, error: retryErr.message })
