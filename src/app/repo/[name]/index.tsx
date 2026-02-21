@@ -1,3 +1,77 @@
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useState, useCallback, useMemo } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  Alert,
+  ActivityIndicator,
+  RefreshControl,
+} from 'react-native';
+import {
+  FileCode,
+  FileJson,
+  FileText,
+  Image as ImageIcon,
+  Code2,
+  Globe,
+  Braces,
+  Terminal,
+  File as FileIcon,
+  FolderGit2,
+  GitBranch,
+  Tag,
+  LayoutDashboard,
+  ChevronLeft,
+  ChevronDown,
+  ChevronRight,
+  Trash2,
+  Share2,
+  Check,
+  Plus,
+  History,
+  Circle,
+  Clock,
+  RefreshCw,
+  ArrowUpFromLine,
+  ArrowDownToLine,
+  Link2,
+  Github,
+} from 'lucide-react-native';
+import {
+  currentBranch,
+  listBranches,
+  getStatus,
+  getLog,
+  listTags,
+  checkout,
+  stageAll,
+  commitAll,
+  createBranch,
+  deleteBranch,
+  mergeBranch,
+  detectConflicts,
+  diffSummary,
+  rebase,
+  createTag,
+  deleteTag,
+  listFilesAtRef,
+  readFileAtRef,
+  addRemote,
+  listRemotes,
+  getRemoteUrl,
+  fetchRemote,
+  pullRemote,
+  pushRemote,
+} from '@/services/gitService';
+import { deleteRepo, getRepoSize } from '@/services/repoService';
+import { stash, stashPop } from '@/services/stashService';
+import { isOnline } from '@/services/networkService';
+import { enqueuePush, syncRepo } from '@/services/offlineSyncService';
+import { isGitHubLinked, createGitHubRepo } from '@/services/githubAuth';
+import SyntaxHighlighter from '@/components/SyntaxHighlighter';
 
 /* ───────────────── helpers ───────────────── */
 
@@ -77,18 +151,6 @@ function getExt(name: string) {
   const idx = name.lastIndexOf('.')
   return idx >= 0 ? name.slice(idx + 1).toLowerCase() : ''
 }
-
-import {
-  FileCode,
-  FileJson,
-  FileText,
-  Image as ImageIcon,
-  Code2,
-  Globe,
-  Braces,
-  Terminal,
-  File as FileIcon,
-} from 'lucide-react-native'
 
 function getFileIcon(name: string) {
   const ext = getExt(name)
@@ -367,6 +429,23 @@ export default function RepoDetailScreen() {
                   Alert.alert('Synced', 'Pulled and pushed successfully')
                   await loadRepoData()
                 } catch (pullErr: any) {
+                  // Check for merge conflicts and navigate to resolution screen
+                  if (pullErr?.message?.includes('conflict') || pullErr?.message?.includes('merge')) {
+                    try {
+                      const conflicts = await detectConflicts(name, `origin/${branch}`)
+                      if (conflicts.length > 0) {
+                        router.push({
+                          pathname: '/repo/[name]/conflicts' as any,
+                          params: {
+                            name,
+                            theirBranch: `origin/${branch}`,
+                            conflicts: JSON.stringify(conflicts),
+                          },
+                        })
+                        return
+                      }
+                    } catch { /* fall through to alert */ }
+                  }
                   Alert.alert('Sync failed', pullErr?.message ?? '')
                 } finally {
                   setSyncing(null)
@@ -396,16 +475,29 @@ export default function RepoDetailScreen() {
       await loadRepoData()
     } catch (err: any) {
       if (err?.message?.includes('conflict') || err?.message?.includes('merge')) {
-        Alert.alert('Merge Conflict', 'Pull resulted in conflicts. Resolve them in Source Control.', [
-          { text: 'OK' },
-        ])
+        // Detect conflicting files and navigate to resolution screen
+        try {
+          const conflicts = await detectConflicts(name, `origin/${branch}`)
+          if (conflicts.length > 0) {
+            router.push({
+              pathname: '/repo/[name]/conflicts' as any,
+              params: {
+                name,
+                theirBranch: `origin/${branch}`,
+                conflicts: JSON.stringify(conflicts),
+              },
+            })
+            return
+          }
+        } catch { /* fall through to alert */ }
+        Alert.alert('Merge Conflict', 'Pull resulted in conflicts but could not detect files automatically.')
       } else {
         Alert.alert('Pull failed', err?.message ?? '')
       }
     } finally {
       setSyncing(null)
     }
-  }, [name, branch, loadRepoData])
+  }, [name, branch, router, loadRepoData])
 
   const handleSync = useCallback(async () => {
     if (!name) return
@@ -417,7 +509,22 @@ export default function RepoDetailScreen() {
     try {
       const result = await syncRepo(name)
       if (result.status === 'conflict') {
-        Alert.alert('Conflict', result.detail ?? 'Merge conflict detected. Resolve in Source Control.')
+        // Detect conflicting files and navigate to resolution screen
+        try {
+          const conflicts = await detectConflicts(name, `origin/${branch}`)
+          if (conflicts.length > 0) {
+            router.push({
+              pathname: '/repo/[name]/conflicts' as any,
+              params: {
+                name,
+                theirBranch: `origin/${branch}`,
+                conflicts: JSON.stringify(conflicts),
+              },
+            })
+            return
+          }
+        } catch { /* fall through to alert */ }
+        Alert.alert('Conflict', result.detail ?? 'Merge conflict detected.')
       } else {
         Alert.alert('Synced', `Status: ${result.status}`)
       }
@@ -427,7 +534,7 @@ export default function RepoDetailScreen() {
     } finally {
       setSyncing(null)
     }
-  }, [name, loadRepoData])
+  }, [name, branch, router, loadRepoData])
 
   const handleFetch = useCallback(async () => {
     if (!name) return
