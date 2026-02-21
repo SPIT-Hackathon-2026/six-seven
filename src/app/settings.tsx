@@ -7,15 +7,16 @@ import {
   Alert,
   TextInput,
   Image,
+  ActivityIndicator,
 } from 'react-native'
 
-import { getAuthor, setAuthor } from '@/services/gitService';
+import { getAuthor, setAuthor, getLog } from '@/services/gitService';
 import { getFreeDiskSpace, REPO_BASE_PATH } from '@/utils/path';
 import { listRepos, deleteRepo } from '@/services/repoService'
 import { useRouter } from 'expo-router'
 import { setAuthenticated } from '@/utils/auth'
 import { useColorScheme } from '@/hooks/use-color-scheme'
-import { User, HardDrive, Info, AlertTriangle, LogOut, Moon, Sun, Github, Link2, Unlink2 } from 'lucide-react-native'
+import { User, HardDrive, Info, AlertTriangle, LogOut, Moon, Sun, Github, Link2, Unlink2, GitCommit, Flame, FolderGit2, Calendar } from 'lucide-react-native'
 import { getGitHubAuth, saveGitHubAuth, clearGitHubAuth, validatePAT } from '@/services/githubAuth'
 import { setAutoSync } from '@/services/offlineSyncService'
 import { getPendingCount, clearCompleted, retryErrors, getQueue } from '@/services/offlineSyncService'
@@ -47,6 +48,9 @@ export default function SettingsScreen() {
   const [autoSyncOn, setAutoSyncOn] = useState(true)
   const [pendingCount, setPendingCount] = useState(0)
   const [queueErrors, setQueueErrors] = useState(0)
+  const [totalCommits, setTotalCommits] = useState(0)
+  const [currentStreak, setCurrentStreak] = useState(0)
+  const [joinDate, setJoinDate] = useState<string | null>(null)
 
   useEffect(() => {
     const { name, email } = getAuthor()
@@ -60,8 +64,9 @@ export default function SettingsScreen() {
       } catch {
         setDiskSpace('N/A')
       }
+      let repos: any[] = []
       try {
-        const repos = await listRepos()
+        repos = await listRepos()
         setRepoCount(repos.length)
       } catch {
         setRepoCount(0)
@@ -75,6 +80,44 @@ export default function SettingsScreen() {
         const q = await getQueue()
         setPendingCount(q.filter((i: any) => i.status === 'pending').length)
         setQueueErrors(q.filter((i: any) => i.status === 'error').length)
+      } catch { /* ignore */ }
+
+      // Cross-repo stats for current user
+      try {
+        let allUserCommits: number[] = [] // timestamps
+        const authorLower = name.toLowerCase()
+        for (const repo of repos) {
+          try {
+            const log = await getLog(repo.name, { depth: 200 })
+            if (log) {
+              for (const entry of log) {
+                const cName = (entry.commit?.author?.name ?? entry.author ?? '').toLowerCase()
+                if (cName === authorLower) {
+                  const ts = (entry.commit?.author?.timestamp ?? entry.timestamp ?? 0)
+                  allUserCommits.push(ts > 1e12 ? ts : ts * 1000)
+                }
+              }
+            }
+          } catch { /* skip repo */ }
+        }
+        setTotalCommits(allUserCommits.length)
+        // Streak
+        const daySet = new Set(allUserCommits.map(ts => new Date(ts).toISOString().split('T')[0]))
+        const today = new Date().toISOString().split('T')[0]
+        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+        let streak = 0
+        for (let i = 0; i < 365; i++) {
+          const d = new Date(Date.now() - i * 86400000).toISOString().split('T')[0]
+          if (i === 0 && !daySet.has(d) && !daySet.has(yesterday)) break
+          if (daySet.has(d)) streak++
+          else if (i > 0) break
+        }
+        setCurrentStreak(streak)
+        // Join date
+        if (allUserCommits.length > 0) {
+          const earliest = Math.min(...allUserCommits)
+          setJoinDate(new Date(earliest).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }))
+        }
       } catch { /* ignore */ }
     })()
   }, [])
@@ -161,6 +204,60 @@ export default function SettingsScreen() {
         className="flex-1 px-5"
         contentContainerStyle={{ paddingBottom: 160 }}
       >
+        {/* ── User Profile Card ── */}
+        <View className="mt-4 rounded-2xl bg-gradient-to-b bg-neutral-100 dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden">
+          <View className="p-5">
+            <View className="flex-row items-center gap-4">
+              <View className="w-16 h-16 rounded-full items-center justify-center bg-blue-100 dark:bg-blue-900/30 border-2 border-blue-400 dark:border-blue-600">
+                <Text className="text-blue-600 dark:text-blue-400 text-xl font-black">
+                  {authorName ? authorName.slice(0, 2).toUpperCase() : '??'}
+                </Text>
+              </View>
+              <View className="flex-1">
+                <Text className="text-black dark:text-white text-lg font-bold">
+                  {authorName || 'Not set'}
+                </Text>
+                <Text className="text-neutral-500 text-xs mt-0.5">
+                  {authorEmail || 'No email set'}
+                </Text>
+                {ghUsername ? (
+                  <View className="flex-row items-center gap-1.5 mt-1.5">
+                    <Github size={11} color="#3fb950" />
+                    <Text className="text-green-500 text-[11px] font-semibold">@{ghUsername}</Text>
+                  </View>
+                ) : (
+                  <Text className="text-neutral-400 text-[11px] mt-1.5">GitHub not linked</Text>
+                )}
+              </View>
+            </View>
+
+            {/* Stats row */}
+            <View className="flex-row mt-4 gap-3">
+              <View className="flex-1 py-2.5 rounded-xl bg-white dark:bg-black border border-neutral-200 dark:border-zinc-800 items-center">
+                <GitCommit size={14} color="#58a6ff" />
+                <Text className="text-black dark:text-white text-base font-bold mt-1">{totalCommits}</Text>
+                <Text className="text-neutral-500 text-[8px] font-bold uppercase tracking-wider">Commits</Text>
+              </View>
+              <View className="flex-1 py-2.5 rounded-xl bg-white dark:bg-black border border-neutral-200 dark:border-zinc-800 items-center">
+                <FolderGit2 size={14} color="#3fb950" />
+                <Text className="text-black dark:text-white text-base font-bold mt-1">{repoCount}</Text>
+                <Text className="text-neutral-500 text-[8px] font-bold uppercase tracking-wider">Repos</Text>
+              </View>
+              <View className="flex-1 py-2.5 rounded-xl bg-white dark:bg-black border border-neutral-200 dark:border-zinc-800 items-center">
+                <Flame size={14} color="#f0883e" />
+                <Text className="text-black dark:text-white text-base font-bold mt-1">{currentStreak}d</Text>
+                <Text className="text-neutral-500 text-[8px] font-bold uppercase tracking-wider">Streak</Text>
+              </View>
+            </View>
+
+            {joinDate && (
+              <View className="flex-row items-center gap-1.5 mt-3 justify-center">
+                <Calendar size={10} color="#8b949e" />
+                <Text className="text-neutral-400 text-[10px]">Contributing since {joinDate}</Text>
+              </View>
+            )}
+          </View>
+        </View>
         {/* Preferences */}
         <View className="mt-2">
           <View className="flex-row items-center mb-3">
