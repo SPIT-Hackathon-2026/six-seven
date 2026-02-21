@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import {
   View,
   Text,
@@ -7,15 +7,19 @@ import {
   ScrollView,
   ActivityIndicator,
   FlatList,
+  Modal,
 } from 'react-native'
 import * as FileSystem from 'expo-file-system/legacy'
 import * as Sharing from 'expo-sharing'
 import * as DocumentPicker from 'expo-document-picker'
 import JSZip from 'jszip'
+import QRCode from 'react-native-qrcode-svg'
+import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera'
 import { useFocusEffect } from 'expo-router'
 
 import { listRepos, getRepoPath } from '../services/repoService'
-import { initRepo } from '../services/gitService'
+import { initRepo, getLog } from '../services/gitService'
+import { exportPatchSince } from '../services/transferService'
 
 // ─── helpers ────────────────────────────────────────────────────────
 
@@ -36,6 +40,129 @@ export default function TransferScreen() {
   const [selected, setSelected] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
+  // QR Export
+  const [qrVisible, setQrVisible] = useState(false)
+  const [qrData, setQrData] = useState<string | null>(null)
+  // QR Import
+  const [scannerVisible, setScannerVisible] = useState(false)
+  const [scanned, setScanned] = useState(false)
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions()
+  const cameraRef = useRef(null)
+  // ── QR EXPORT ─────────────────────────────────────────────────────
+  const handleExportQR = async () => {
+    if (!selected) {
+      Alert.alert('Select a repo', 'Tap a repository from the list first.')
+      return
+    }
+    setBusy(true)
+    setStatus('Zipping repository…')
+    try {
+      const repoDir = getRepoPath(selected)
+      const zip = new JSZip()
+      const addFolder = async (folderUri: string, prefix: string) => {
+        const names = await FileSystem.readDirectoryAsync(folderUri)
+        for (const name of names) {
+          const fullUri = folderUri + '/' + name
+          const info = await FileSystem.getInfoAsync(fullUri)
+          if (info.isDirectory) {
+            await addFolder(fullUri, prefix + name + '/')
+          } else {
+            const content = await FileSystem.readAsStringAsync(fullUri, {
+              encoding: FileSystem.EncodingType.Base64,
+            })
+            zip.file(prefix + name, content, { base64: true })
+          }
+        }
+      }
+      await addFolder(repoDir, '')
+      setStatus('Generating zip file…')
+      const base64Zip = await zip.generateAsync({ type: 'base64' })
+      const byteLength = base64Zip.length * 0.75 // base64 to bytes
+      if (byteLength > 3000) {
+        Alert.alert('Repo too large for QR', 'Please select a smaller repository. QR codes can only encode very small files (a few KB).')
+        setStatus('')
+        setBusy(false)
+        return
+      }
+      setQrData(base64Zip)
+      setQrVisible(true)
+      setStatus('')
+    } catch (e: any) {
+      Alert.alert('QR Export Error', e.message)
+      setStatus('')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // ── QR IMPORT ─────────────────────────────────────────────────────
+  const openScanner = async () => {
+    if (!cameraPermission || cameraPermission.status !== 'granted') {
+      const { status } = await requestCameraPermission()
+      if (status !== 'granted') {
+        Alert.alert('Camera permission required', 'Please allow camera access to scan QR codes.')
+        return
+      }
+    }
+    setScanned(false)
+    setScannerVisible(true)
+  }
+
+  const handleQrScanned = async (result: BarcodeScanningResult) => {
+    if (scanned) return
+    setScanned(true)
+    setScannerVisible(false)
+    setBusy(true)
+    setStatus('Importing from QR…')
+    try {
+      const scannedData = result.data
+      const zip = await JSZip.loadAsync(scannedData, { base64: true })
+      const entries = Object.keys(zip.files)
+      const repoName = 'qr-import-' + Date.now()
+      const hasGitDir = entries.some(
+        (e) => e === '.git/' || e.startsWith('.git/')
+      )
+      const targetDir = getRepoPath(repoName)
+      await FileSystem.makeDirectoryAsync(targetDir, { intermediates: true })
+      if (!hasGitDir) {
+        try {
+          await initRepo(repoName)
+        } catch {}
+      }
+      let count = 0
+      for (const entryName of entries) {
+        const entry = zip.files[entryName]
+        if (entry.dir) {
+          await FileSystem.makeDirectoryAsync(targetDir + '/' + entryName, {
+            intermediates: true,
+          })
+        } else {
+          const content = await entry.async('base64')
+          const destPath = targetDir + '/' + entryName
+          const folder = destPath.substring(0, destPath.lastIndexOf('/'))
+          await FileSystem.makeDirectoryAsync(folder, { intermediates: true })
+          await FileSystem.writeAsStringAsync(destPath, content, {
+            encoding: FileSystem.EncodingType.Base64,
+          })
+          count++
+        }
+      }
+      setStatus(`Imported "${repoName}" (${count} files) ✓`)
+      Alert.alert('Success', `Repository "${repoName}" imported with ${count} files.`)
+      refresh()
+    } catch (e: any) {
+      Alert.alert('QR Import Error', e.message)
+      setStatus('')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Patch sync state
+  const [showPatchSync, setShowPatchSync] = useState(false)
+  const [patchCommits, setPatchCommits] = useState<any[]>([])
+  const [selectedCommit, setSelectedCommit] = useState<string | null>(null)
+  const [loadingCommits, setLoadingCommits] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -198,10 +325,77 @@ export default function TransferScreen() {
     }
   }
 
+  // ── PATCH SYNC ─────────────────────────────────────────────────────
+
+  const loadPatchCommits = async () => {
+    if (!selected) return
+    setLoadingCommits(true)
+    try {
+      const log = await getLog(selected, { depth: 50 })
+      setPatchCommits(
+        log.map((e: any) => ({
+          oid: e.oid,
+          message: e.commit?.message ?? '',
+          author: e.commit?.author?.name ?? '',
+          timestamp: e.commit?.author?.timestamp ?? 0,
+        })),
+      )
+    } catch {
+      setPatchCommits([])
+    } finally {
+      setLoadingCommits(false)
+    }
+  }
+
+  const handlePatchExport = async () => {
+    if (!selected || !selectedCommit) {
+      Alert.alert('Select a commit', 'Pick a commit to export changes since')
+      return
+    }
+
+    setBusy(true)
+    setStatus('Generating patch…')
+
+    try {
+      const patch = await exportPatchSince(selected, selectedCommit)
+      const json = JSON.stringify(patch, null, 2)
+
+      const patchPath =
+        FileSystem.cacheDirectory + `${selected}-patch-${Date.now()}.json`
+      await FileSystem.writeAsStringAsync(patchPath, json, {
+        encoding: FileSystem.EncodingType.UTF8,
+      })
+
+      setStatus('Opening share sheet…')
+      const canShare = await Sharing.isAvailableAsync()
+      if (!canShare) {
+        Alert.alert('Sharing not available')
+        return
+      }
+
+      await Sharing.shareAsync(patchPath, {
+        mimeType: 'application/json',
+        dialogTitle: `Share patch for ${selected}`,
+      })
+
+      setStatus(
+        `Exported patch: ${patch.files.length} files, ${patch.commits.length} commits ✓`,
+      )
+    } catch (e: any) {
+      Alert.alert('Patch Export Error', e.message)
+      setStatus('')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // ── RENDER ────────────────────────────────────────────────────────
 
   return (
-    <View className="flex-1 bg-[#0d1117]">
+    <ScrollView
+      className="flex-1 bg-[#0d1117]"
+      contentContainerStyle={{ paddingBottom: 160 }}
+    >
       {/* Header */}
       <View className="px-4 pt-6 pb-3">
         <Text className="text-[#e6edf3] text-xl font-bold">
@@ -270,6 +464,32 @@ export default function TransferScreen() {
 
         <TouchableOpacity
           className={`py-3 rounded-lg items-center border ${
+            selected && !busy ? 'bg-[#21262d] border-[#30363d]' : 'bg-[#161b22] border-[#30363d]'
+          }`}
+          onPress={handleExportQR}
+          disabled={busy || !selected}
+        >
+          <Text
+            className={`font-semibold text-base ${
+              selected && !busy ? 'text-[#f2e85c]' : 'text-[#484f58]'
+            }`}
+          >
+            📱 Generate QR
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          className="py-3 rounded-lg items-center border bg-[#161b22] border-[#30363d]"
+          onPress={openScanner}
+          disabled={busy}
+        >
+          <Text className="font-semibold text-base text-[#a6ff58]">
+            📷 Scan QR
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          className={`py-3 rounded-lg items-center border ${
             busy
               ? 'bg-[#21262d] border-[#30363d]'
               : 'bg-[#161b22] border-[#30363d]'
@@ -286,6 +506,68 @@ export default function TransferScreen() {
           </Text>
         </TouchableOpacity>
       </View>
+      {/* QR Modal */}
+      <Modal
+        visible={qrVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setQrVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: '#000a', justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ backgroundColor: '#161b22', padding: 24, borderRadius: 16, alignItems: 'center', maxWidth: 340 }}>
+            <Text style={{ color: '#e6edf3', fontWeight: 'bold', fontSize: 18, marginBottom: 12 }}>Scan to Import Repo</Text>
+            {qrData && (
+              <QRCode
+                value={qrData}
+                size={220}
+                backgroundColor="#161b22"
+                color="#58a6ff"
+              />
+            )}
+            <Text style={{ color: '#8b949e', fontSize: 12, marginTop: 12, textAlign: 'center' }}>
+              Only very small repos can be shared via QR. Scan this code on another device to import.
+            </Text>
+            <TouchableOpacity
+              style={{ marginTop: 18, paddingVertical: 8, paddingHorizontal: 24, backgroundColor: '#30363d', borderRadius: 8 }}
+              onPress={() => setQrVisible(false)}
+            >
+              <Text style={{ color: '#e6edf3', fontWeight: 'bold' }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* QR Scanner Modal */}
+      <Modal
+        visible={scannerVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setScannerVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: '#000a', justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ backgroundColor: '#161b22', padding: 16, borderRadius: 16, alignItems: 'center', maxWidth: 340 }}>
+            <Text style={{ color: '#e6edf3', fontWeight: 'bold', fontSize: 18, marginBottom: 12 }}>Scan QR Code</Text>
+            {(!cameraPermission || cameraPermission.status !== 'granted') ? (
+              <Text style={{ color: '#f66', marginBottom: 12 }}>Camera permission denied.</Text>
+            ) : (
+              <CameraView
+                ref={cameraRef}
+                style={{ width: 240, height: 240, marginBottom: 12 }}
+                facing="back"
+                barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                onBarcodeScanned={handleQrScanned}
+                enableTorch={false}
+              />
+            )}
+            <TouchableOpacity
+              style={{ marginTop: 8, paddingVertical: 8, paddingHorizontal: 24, backgroundColor: '#30363d', borderRadius: 8 }}
+              onPress={() => setScannerVisible(false)}
+            >
+              <Text style={{ color: '#e6edf3', fontWeight: 'bold' }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Status bar */}
       {(busy || status) && (
@@ -294,6 +576,111 @@ export default function TransferScreen() {
           <Text className="text-[#8b949e] text-sm flex-1">{status}</Text>
         </View>
       )}
-    </View>
+
+      {/* ── Incremental Patch Sync ── */}
+      <View className="px-4 mt-6">
+        <TouchableOpacity
+          className="flex-row items-center justify-between py-2"
+          onPress={() => {
+            setShowPatchSync(!showPatchSync)
+            if (!showPatchSync && selected) loadPatchCommits()
+          }}
+        >
+          <View>
+            <Text className="text-[#e6edf3] text-base font-bold">
+              📋 Incremental Patch Sync
+            </Text>
+            <Text className="text-[#484f58] text-xs mt-0.5">
+              Export only changes since a specific commit
+            </Text>
+          </View>
+          <Text className="text-[#8b949e]">{showPatchSync ? '▲' : '▼'}</Text>
+        </TouchableOpacity>
+
+        {showPatchSync && (
+          <View className="mt-2 rounded-lg bg-[#161b22] border border-[#30363d] overflow-hidden">
+            {!selected ? (
+              <View className="px-3 py-4 items-center">
+                <Text className="text-[#484f58] text-sm">
+                  Select a repository above first
+                </Text>
+              </View>
+            ) : loadingCommits ? (
+              <View className="py-4 items-center">
+                <ActivityIndicator color="#58a6ff" size="small" />
+              </View>
+            ) : patchCommits.length === 0 ? (
+              <View className="px-3 py-4 items-center">
+                <Text className="text-[#484f58] text-sm">No commits found</Text>
+              </View>
+            ) : (
+              <>
+                <View className="px-3 py-2 bg-[#21262d] border-b border-[#30363d]">
+                  <Text className="text-[#8b949e] text-xs">
+                    Select the base commit (changes after this will be exported)
+                  </Text>
+                </View>
+                <ScrollView style={{ maxHeight: 200 }}>
+                  {patchCommits.map((c) => (
+                    <TouchableOpacity
+                      key={c.oid}
+                      className={`px-3 py-2.5 border-b border-[#21262d] flex-row items-center ${
+                        selectedCommit === c.oid ? 'bg-[#1f6feb22]' : ''
+                      }`}
+                      onPress={() => setSelectedCommit(c.oid)}
+                    >
+                      <View
+                        className="w-4 h-4 rounded-full border mr-2 items-center justify-center"
+                        style={{
+                          borderColor:
+                            selectedCommit === c.oid ? '#58a6ff' : '#30363d',
+                          backgroundColor:
+                            selectedCommit === c.oid
+                              ? '#1f6feb'
+                              : 'transparent',
+                        }}
+                      >
+                        {selectedCommit === c.oid && (
+                          <View className="w-2 h-2 rounded-full bg-white" />
+                        )}
+                      </View>
+                      <View className="flex-1">
+                        <Text
+                          className="text-[#e6edf3] text-xs"
+                          numberOfLines={1}
+                        >
+                          {c.message.trim()}
+                        </Text>
+                        <Text className="text-[#484f58] text-[10px]">
+                          {c.oid.slice(0, 7)} ·{' '}
+                          {c.timestamp
+                            ? new Date(c.timestamp * 1000).toLocaleDateString()
+                            : ''}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <TouchableOpacity
+                  className={`mx-3 my-2 py-2 rounded-lg items-center ${
+                    selectedCommit && !busy ? 'bg-[#238636]' : 'bg-[#21262d]'
+                  }`}
+                  onPress={handlePatchExport}
+                  disabled={busy || !selectedCommit}
+                >
+                  <Text
+                    className={`font-semibold text-sm ${
+                      selectedCommit && !busy ? 'text-white' : 'text-[#484f58]'
+                    }`}
+                  >
+                    📤 Export Patch
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
+      </View>
+    </ScrollView>
   )
 }
