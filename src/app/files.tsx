@@ -19,6 +19,8 @@ import {
   deleteFile,
   createDirectory,
   deleteDirectory,
+  searchFiles,
+  searchContent,
 } from '@/services/fileService'
 
 type TreeNode = {
@@ -46,6 +48,15 @@ export default function FilesScreen() {
   // New file/folder dialog
   const [showNew, setShowNew] = useState<'file' | 'folder' | null>(null)
   const [newName, setNewName] = useState('')
+
+  // Search state
+  const [showSearch, setShowSearch] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchMode, setSearchMode] = useState<'filename' | 'content'>(
+    'filename',
+  )
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searching, setSearching] = useState(false)
 
   // Load repos
   useFocusEffect(
@@ -177,6 +188,38 @@ export default function FilesScreen() {
     }
   }, [selectedRepo, currentDir, showNew, newName, loadDir])
 
+  const handleSearch = useCallback(async () => {
+    if (!selectedRepo || !searchQuery.trim()) return
+    setSearching(true)
+    try {
+      if (searchMode === 'filename') {
+        const results = await searchFiles(selectedRepo, searchQuery.trim())
+        setSearchResults(
+          results.map((f: any) => ({
+            path: f.path,
+            name: f.name,
+            type: 'file',
+          })),
+        )
+      } else {
+        const results = await searchContent(selectedRepo, searchQuery.trim())
+        setSearchResults(
+          results.map((m: any) => ({
+            path: m.path,
+            name: m.path.split('/').pop(),
+            line: m.line,
+            content: m.content,
+            type: 'content',
+          })),
+        )
+      }
+    } catch (err: any) {
+      Alert.alert('Search error', err?.message ?? 'Search failed')
+    } finally {
+      setSearching(false)
+    }
+  }, [selectedRepo, searchQuery, searchMode])
+
   // File editor view
   if (editingFile) {
     return (
@@ -227,6 +270,15 @@ export default function FilesScreen() {
           <TouchableOpacity
             className="px-3 py-1 rounded-md bg-[#21262d]"
             onPress={() => {
+              setShowSearch(!showSearch)
+              setSearchResults([])
+            }}
+          >
+            <Text className="text-[#c9d1d9] text-xs">🔍 Search</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            className="px-3 py-1 rounded-md bg-[#21262d]"
+            onPress={() => {
               setShowNew('file')
               setNewName('')
             }}
@@ -244,6 +296,105 @@ export default function FilesScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Search panel */}
+      {showSearch && selectedRepo && (
+        <View className="mx-5 mt-2 rounded-lg bg-[#161b22] border border-[#30363d] p-3">
+          <View className="flex-row gap-2 mb-2">
+            <TouchableOpacity
+              className={`px-3 py-1 rounded-md ${searchMode === 'filename' ? 'bg-[#1f6feb]' : 'bg-[#21262d]'}`}
+              onPress={() => setSearchMode('filename')}
+            >
+              <Text
+                className={`text-xs ${searchMode === 'filename' ? 'text-white' : 'text-[#c9d1d9]'}`}
+              >
+                Filename
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className={`px-3 py-1 rounded-md ${searchMode === 'content' ? 'bg-[#1f6feb]' : 'bg-[#21262d]'}`}
+              onPress={() => setSearchMode('content')}
+            >
+              <Text
+                className={`text-xs ${searchMode === 'content' ? 'text-white' : 'text-[#c9d1d9]'}`}
+              >
+                Content
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <View className="flex-row gap-2">
+            <TextInput
+              className="flex-1 bg-[#0d1117] text-[#e6edf3] px-3 py-1.5 rounded-md border border-[#30363d] text-sm"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder={
+                searchMode === 'filename'
+                  ? 'Search filenames…'
+                  : 'Search in file contents…'
+              }
+              placeholderTextColor="#484f58"
+              onSubmitEditing={handleSearch}
+              autoFocus
+            />
+            <TouchableOpacity
+              className="px-3 py-1.5 rounded-md bg-[#1f6feb]"
+              onPress={handleSearch}
+              disabled={searching}
+            >
+              <Text className="text-white text-sm">
+                {searching ? '...' : 'Go'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Search results */}
+          {searchResults.length > 0 && (
+            <View className="mt-2 max-h-60">
+              <ScrollView>
+                <Text className="text-[#8b949e] text-xs mb-1">
+                  {searchResults.length} result
+                  {searchResults.length !== 1 ? 's' : ''}
+                </Text>
+                {searchResults.map((r, idx) => (
+                  <TouchableOpacity
+                    key={`${r.path}-${r.line ?? idx}`}
+                    className="py-2 border-b border-[#21262d]"
+                    onPress={async () => {
+                      try {
+                        const content = await readFile(selectedRepo!, r.path)
+                        setFileContent(content)
+                        setEditingFile(r.path)
+                        setShowSearch(false)
+                      } catch (err: any) {
+                        Alert.alert('Error', err?.message ?? 'Cannot open file')
+                      }
+                    }}
+                  >
+                    <Text className="text-[#58a6ff] text-xs" numberOfLines={1}>
+                      📄 {r.path}
+                      {r.line ? `:${r.line}` : ''}
+                    </Text>
+                    {r.content && (
+                      <Text
+                        className="text-[#8b949e] text-[11px] mt-0.5"
+                        numberOfLines={1}
+                        style={{ fontFamily: 'monospace' }}
+                      >
+                        {r.content}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+          {searching && (
+            <View className="mt-2 items-center">
+              <ActivityIndicator color="#58a6ff" size="small" />
+            </View>
+          )}
+        </View>
+      )}
 
       {/* Repo picker */}
       <TouchableOpacity

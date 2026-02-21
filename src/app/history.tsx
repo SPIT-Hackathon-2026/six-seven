@@ -16,6 +16,8 @@ import {
   currentBranch,
   listBranches,
   diffSummary,
+  getReflog,
+  resetHard,
 } from '@/services/gitService'
 
 type CommitEntry = {
@@ -47,6 +49,9 @@ export default function HistoryScreen() {
   const [showRepoPicker, setShowRepoPicker] = useState(false)
   const [expandedOid, setExpandedOid] = useState<string | null>(null)
   const [commitDetail, setCommitDetail] = useState<any>(null)
+  const [viewMode, setViewMode] = useState<'commits' | 'reflog'>('commits')
+  const [reflogEntries, setReflogEntries] = useState<any[]>([])
+  const [loadingReflog, setLoadingReflog] = useState(false)
 
   useFocusEffect(
     useCallback(() => {
@@ -109,12 +114,84 @@ export default function HistoryScreen() {
     [expandedOid, selectedRepo],
   )
 
+  const loadReflog = useCallback(async () => {
+    if (!selectedRepo) return
+    setLoadingReflog(true)
+    try {
+      const entries = await getReflog(selectedRepo)
+      setReflogEntries(entries.reverse()) // newest first
+    } catch {
+      setReflogEntries([])
+    } finally {
+      setLoadingReflog(false)
+    }
+  }, [selectedRepo])
+
+  const handleResetToCommit = useCallback(
+    (oid: string) => {
+      if (!selectedRepo) return
+      Alert.alert(
+        'Reset to commit',
+        `This will reset the current branch to ${oid.slice(0, 7)}. Uncommitted changes will be lost.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Reset',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await resetHard(selectedRepo, oid)
+                Alert.alert(
+                  'Reset complete',
+                  `Branch reset to ${oid.slice(0, 7)}`,
+                )
+                refreshLog()
+              } catch (err: any) {
+                Alert.alert('Reset failed', err?.message ?? '')
+              }
+            },
+          },
+        ],
+      )
+    },
+    [selectedRepo, refreshLog],
+  )
+
   return (
     <View className="flex-1 bg-[#0d1117]">
       {/* Header */}
       <View className="flex-row items-center justify-between px-5 py-4 border-b border-[#30363d]">
         <Text className="text-[#e6edf3] text-lg font-bold">History</Text>
-        <Text className="text-[#8b949e] text-xs">{commits.length} commits</Text>
+        <View className="flex-row gap-2 items-center">
+          <TouchableOpacity
+            className={`px-3 py-1 rounded-md ${viewMode === 'commits' ? 'bg-[#1f6feb]' : 'bg-[#21262d]'}`}
+            onPress={() => setViewMode('commits')}
+          >
+            <Text
+              className={`text-xs ${viewMode === 'commits' ? 'text-white' : 'text-[#c9d1d9]'}`}
+            >
+              Commits
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            className={`px-3 py-1 rounded-md ${viewMode === 'reflog' ? 'bg-[#1f6feb]' : 'bg-[#21262d]'}`}
+            onPress={() => {
+              setViewMode('reflog')
+              loadReflog()
+            }}
+          >
+            <Text
+              className={`text-xs ${viewMode === 'reflog' ? 'text-white' : 'text-[#c9d1d9]'}`}
+            >
+              Reflog
+            </Text>
+          </TouchableOpacity>
+          <Text className="text-[#8b949e] text-xs">
+            {viewMode === 'commits'
+              ? `${commits.length} commits`
+              : `${reflogEntries.length} entries`}
+          </Text>
+        </View>
       </View>
 
       {/* Repo picker */}
@@ -175,6 +252,103 @@ export default function HistoryScreen() {
           <View className="mt-8 items-center">
             <Text className="text-[#8b949e]">No Git repository selected</Text>
           </View>
+        ) : viewMode === 'reflog' ? (
+          /* ── Reflog view ── */
+          loadingReflog ? (
+            <View className="mt-8 items-center">
+              <ActivityIndicator color="#58a6ff" />
+            </View>
+          ) : reflogEntries.length === 0 ? (
+            <View className="mt-8 items-center">
+              <Text className="text-[#8b949e] text-base">
+                No reflog entries
+              </Text>
+              <Text className="text-[#484f58] text-sm mt-1">
+                Reflog tracks branch changes, commits & resets
+              </Text>
+            </View>
+          ) : (
+            <View className="mt-1">
+              {reflogEntries.map((entry, idx) => {
+                const isLast = idx === reflogEntries.length - 1
+                const actionColor =
+                  entry.action === 'commit'
+                    ? '#7ee787'
+                    : entry.action === 'reset'
+                      ? '#f85149'
+                      : entry.action === 'checkout'
+                        ? '#58a6ff'
+                        : '#d29922'
+                return (
+                  <View key={idx} className="flex-row">
+                    <View className="items-center mr-3" style={{ width: 20 }}>
+                      <View
+                        className="w-3 h-3 rounded-full mt-1"
+                        style={{ backgroundColor: actionColor }}
+                      />
+                      {!isLast && <View className="flex-1 w-px bg-[#30363d]" />}
+                    </View>
+                    <View className="flex-1 mb-3">
+                      <View className="rounded-lg bg-[#161b22] border border-[#30363d] p-3">
+                        <View className="flex-row items-center gap-2 mb-1">
+                          <View className="px-1.5 py-0.5 rounded bg-[#21262d]">
+                            <Text
+                              style={{ color: actionColor }}
+                              className="text-[10px] font-bold uppercase"
+                            >
+                              {entry.action}
+                            </Text>
+                          </View>
+                          {entry.branch && (
+                            <Text className="text-[#f0a65e] text-xs">
+                              {entry.branch}
+                            </Text>
+                          )}
+                        </View>
+                        {entry.message && (
+                          <Text
+                            className="text-[#e6edf3] text-sm"
+                            numberOfLines={2}
+                          >
+                            {entry.message}
+                          </Text>
+                        )}
+                        <View className="flex-row items-center mt-1.5 gap-2">
+                          {entry.from && (
+                            <Text className="text-[#484f58] text-xs font-mono">
+                              {entry.from.slice(0, 7)}
+                            </Text>
+                          )}
+                          {entry.from && entry.to && (
+                            <Text className="text-[#484f58] text-xs">→</Text>
+                          )}
+                          {entry.to && (
+                            <Text className="text-[#8b949e] text-xs font-mono">
+                              {entry.to.slice(0, 7)}
+                            </Text>
+                          )}
+                          <Text className="text-[#484f58] text-xs">·</Text>
+                          <Text className="text-[#8b949e] text-xs">
+                            {new Date(entry.timestamp).toLocaleString()}
+                          </Text>
+                        </View>
+                        {entry.to && (
+                          <TouchableOpacity
+                            className="mt-2 px-2.5 py-1 rounded bg-[#21262d] border border-[#30363d] self-start"
+                            onPress={() => handleResetToCommit(entry.to)}
+                          >
+                            <Text className="text-[#f85149] text-xs">
+                              Reset here
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                )
+              })}
+            </View>
+          )
         ) : loading && commits.length === 0 ? (
           <View className="mt-8 items-center">
             <ActivityIndicator color="#58a6ff" />
@@ -279,6 +453,17 @@ export default function HistoryScreen() {
                           </Text>
                         </View>
                       )}
+
+                      {isExpanded && (
+                        <TouchableOpacity
+                          className="mt-2 px-2.5 py-1 rounded bg-[#21262d] border border-[#30363d] self-start"
+                          onPress={() => handleResetToCommit(c.oid)}
+                        >
+                          <Text className="text-[#f85149] text-xs">
+                            Reset to this commit
+                          </Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   </TouchableOpacity>
                 </View>
@@ -288,5 +473,5 @@ export default function HistoryScreen() {
         )}
       </ScrollView>
     </View>
-  );
+  )
 }

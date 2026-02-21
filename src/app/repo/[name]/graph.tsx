@@ -229,9 +229,7 @@ export default function BranchGraphScreen() {
           <Text className="text-[#58a6ff] text-2xl font-bold">‹</Text>
         </TouchableOpacity>
         <View className="flex-1 items-center">
-          <Text className="text-[#e6edf3] text-lg font-bold">
-            Branch Graph
-          </Text>
+          <Text className="text-[#e6edf3] text-lg font-bold">Branch Graph</Text>
           <Text className="text-[#8b949e] text-[11px]">{name}</Text>
         </View>
         <View className="w-8" />
@@ -292,9 +290,7 @@ export default function BranchGraphScreen() {
         <Text className="text-[#484f58] text-[10px]">
           {branchInfos.length} branch{branchInfos.length !== 1 ? 'es' : ''} ·{' '}
           {graphCommits.length} commits ·{' '}
-          {activeBranch
-            ? `Showing ${activeBranch}`
-            : 'Showing all branches'}
+          {activeBranch ? `Showing ${activeBranch}` : 'Showing all branches'}
         </Text>
       </View>
 
@@ -345,10 +341,7 @@ export default function BranchGraphScreen() {
                       {/* Vertical lines for each active column */}
                       <View className="absolute top-0 bottom-0 left-0 right-0">
                         {branchInfos.map((bi) => {
-                          if (
-                            activeBranch !== null &&
-                            bi.name !== activeBranch
-                          )
+                          if (activeBranch !== null && bi.name !== activeBranch)
                             return null
                           return (
                             <View
@@ -385,15 +378,11 @@ export default function BranchGraphScreen() {
                           className="absolute"
                           style={{
                             top: 20,
-                            left:
-                              commit.column * COL_WIDTH +
-                              NODE_SIZE / 2,
+                            left: commit.column * COL_WIDTH + NODE_SIZE / 2,
                             width:
                               Math.abs(
                                 ((branchInfos.find(
-                                  (b) =>
-                                    b.column !==
-                                    commit.column,
+                                  (b) => b.column !== commit.column,
                                 )?.column ?? commit.column + 1) -
                                   commit.column) *
                                   COL_WIDTH,
@@ -413,9 +402,7 @@ export default function BranchGraphScreen() {
                       {commit.branches.length > 0 && (
                         <View className="flex-row flex-wrap gap-1 mb-1">
                           {commit.branches.map((br) => {
-                            const info = branchInfos.find(
-                              (b) => b.name === br,
-                            )
+                            const info = branchInfos.find((b) => b.name === br)
                             const color = info?.color ?? '#58a6ff'
                             return (
                               <View

@@ -15,7 +15,8 @@ import JSZip from 'jszip'
 import { useFocusEffect } from 'expo-router'
 
 import { listRepos, getRepoPath } from '../services/repoService'
-import { initRepo } from '../services/gitService'
+import { initRepo, getLog } from '../services/gitService'
+import { exportPatchSince } from '../services/transferService'
 
 // ─── helpers ────────────────────────────────────────────────────────
 
@@ -36,6 +37,12 @@ export default function TransferScreen() {
   const [selected, setSelected] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
+
+  // Patch sync state
+  const [showPatchSync, setShowPatchSync] = useState(false)
+  const [patchCommits, setPatchCommits] = useState<any[]>([])
+  const [selectedCommit, setSelectedCommit] = useState<string | null>(null)
+  const [loadingCommits, setLoadingCommits] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -198,10 +205,77 @@ export default function TransferScreen() {
     }
   }
 
+  // ── PATCH SYNC ─────────────────────────────────────────────────────
+
+  const loadPatchCommits = async () => {
+    if (!selected) return
+    setLoadingCommits(true)
+    try {
+      const log = await getLog(selected, { depth: 50 })
+      setPatchCommits(
+        log.map((e: any) => ({
+          oid: e.oid,
+          message: e.commit?.message ?? '',
+          author: e.commit?.author?.name ?? '',
+          timestamp: e.commit?.author?.timestamp ?? 0,
+        })),
+      )
+    } catch {
+      setPatchCommits([])
+    } finally {
+      setLoadingCommits(false)
+    }
+  }
+
+  const handlePatchExport = async () => {
+    if (!selected || !selectedCommit) {
+      Alert.alert('Select a commit', 'Pick a commit to export changes since')
+      return
+    }
+
+    setBusy(true)
+    setStatus('Generating patch…')
+
+    try {
+      const patch = await exportPatchSince(selected, selectedCommit)
+      const json = JSON.stringify(patch, null, 2)
+
+      const patchPath =
+        FileSystem.cacheDirectory + `${selected}-patch-${Date.now()}.json`
+      await FileSystem.writeAsStringAsync(patchPath, json, {
+        encoding: FileSystem.EncodingType.UTF8,
+      })
+
+      setStatus('Opening share sheet…')
+      const canShare = await Sharing.isAvailableAsync()
+      if (!canShare) {
+        Alert.alert('Sharing not available')
+        return
+      }
+
+      await Sharing.shareAsync(patchPath, {
+        mimeType: 'application/json',
+        dialogTitle: `Share patch for ${selected}`,
+      })
+
+      setStatus(
+        `Exported patch: ${patch.files.length} files, ${patch.commits.length} commits ✓`,
+      )
+    } catch (e: any) {
+      Alert.alert('Patch Export Error', e.message)
+      setStatus('')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // ── RENDER ────────────────────────────────────────────────────────
 
   return (
-    <View className="flex-1 bg-[#0d1117]">
+    <ScrollView
+      className="flex-1 bg-[#0d1117]"
+      contentContainerStyle={{ paddingBottom: 160 }}
+    >
       {/* Header */}
       <View className="px-4 pt-6 pb-3">
         <Text className="text-[#e6edf3] text-xl font-bold">
@@ -294,6 +368,111 @@ export default function TransferScreen() {
           <Text className="text-[#8b949e] text-sm flex-1">{status}</Text>
         </View>
       )}
-    </View>
+
+      {/* ── Incremental Patch Sync ── */}
+      <View className="px-4 mt-6">
+        <TouchableOpacity
+          className="flex-row items-center justify-between py-2"
+          onPress={() => {
+            setShowPatchSync(!showPatchSync)
+            if (!showPatchSync && selected) loadPatchCommits()
+          }}
+        >
+          <View>
+            <Text className="text-[#e6edf3] text-base font-bold">
+              📋 Incremental Patch Sync
+            </Text>
+            <Text className="text-[#484f58] text-xs mt-0.5">
+              Export only changes since a specific commit
+            </Text>
+          </View>
+          <Text className="text-[#8b949e]">{showPatchSync ? '▲' : '▼'}</Text>
+        </TouchableOpacity>
+
+        {showPatchSync && (
+          <View className="mt-2 rounded-lg bg-[#161b22] border border-[#30363d] overflow-hidden">
+            {!selected ? (
+              <View className="px-3 py-4 items-center">
+                <Text className="text-[#484f58] text-sm">
+                  Select a repository above first
+                </Text>
+              </View>
+            ) : loadingCommits ? (
+              <View className="py-4 items-center">
+                <ActivityIndicator color="#58a6ff" size="small" />
+              </View>
+            ) : patchCommits.length === 0 ? (
+              <View className="px-3 py-4 items-center">
+                <Text className="text-[#484f58] text-sm">No commits found</Text>
+              </View>
+            ) : (
+              <>
+                <View className="px-3 py-2 bg-[#21262d] border-b border-[#30363d]">
+                  <Text className="text-[#8b949e] text-xs">
+                    Select the base commit (changes after this will be exported)
+                  </Text>
+                </View>
+                <ScrollView style={{ maxHeight: 200 }}>
+                  {patchCommits.map((c) => (
+                    <TouchableOpacity
+                      key={c.oid}
+                      className={`px-3 py-2.5 border-b border-[#21262d] flex-row items-center ${
+                        selectedCommit === c.oid ? 'bg-[#1f6feb22]' : ''
+                      }`}
+                      onPress={() => setSelectedCommit(c.oid)}
+                    >
+                      <View
+                        className="w-4 h-4 rounded-full border mr-2 items-center justify-center"
+                        style={{
+                          borderColor:
+                            selectedCommit === c.oid ? '#58a6ff' : '#30363d',
+                          backgroundColor:
+                            selectedCommit === c.oid
+                              ? '#1f6feb'
+                              : 'transparent',
+                        }}
+                      >
+                        {selectedCommit === c.oid && (
+                          <View className="w-2 h-2 rounded-full bg-white" />
+                        )}
+                      </View>
+                      <View className="flex-1">
+                        <Text
+                          className="text-[#e6edf3] text-xs"
+                          numberOfLines={1}
+                        >
+                          {c.message.trim()}
+                        </Text>
+                        <Text className="text-[#484f58] text-[10px]">
+                          {c.oid.slice(0, 7)} ·{' '}
+                          {c.timestamp
+                            ? new Date(c.timestamp * 1000).toLocaleDateString()
+                            : ''}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <TouchableOpacity
+                  className={`mx-3 my-2 py-2 rounded-lg items-center ${
+                    selectedCommit && !busy ? 'bg-[#238636]' : 'bg-[#21262d]'
+                  }`}
+                  onPress={handlePatchExport}
+                  disabled={busy || !selectedCommit}
+                >
+                  <Text
+                    className={`font-semibold text-sm ${
+                      selectedCommit && !busy ? 'text-white' : 'text-[#484f58]'
+                    }`}
+                  >
+                    📤 Export Patch
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
+      </View>
+    </ScrollView>
   )
 }
