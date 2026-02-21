@@ -1,4 +1,4 @@
-import RNFS from 'react-native-fs'
+import * as FileSystem from 'expo-file-system/legacy'
 import { getRepoPath } from './repoService'
 
 // =====================================================================
@@ -10,32 +10,38 @@ export async function writeFile(repoName, filePath, content) {
   const full = `${getRepoPath(repoName)}/${filePath}`
   // ensure parent directory exists
   const parentDir = full.substring(0, full.lastIndexOf('/'))
-  const exists = await RNFS.exists(parentDir)
-  if (!exists) {
-    await RNFS.mkdir(parentDir)
+  const info = await FileSystem.getInfoAsync(parentDir)
+  if (!info.exists) {
+    await FileSystem.makeDirectoryAsync(parentDir, { intermediates: true })
   }
-  await RNFS.writeFile(full, content, 'utf8')
+  await FileSystem.writeAsStringAsync(full, content, {
+    encoding: FileSystem.EncodingType.UTF8,
+  })
   return full
 }
 
 /** Read a file as utf-8 string. */
 export async function readFile(repoName, filePath) {
   const full = `${getRepoPath(repoName)}/${filePath}`
-  return RNFS.readFile(full, 'utf8')
+  return FileSystem.readAsStringAsync(full, {
+    encoding: FileSystem.EncodingType.UTF8,
+  })
 }
 
 /** Read a file as base64 (for binary content). */
 export async function readFileBase64(repoName, filePath) {
   const full = `${getRepoPath(repoName)}/${filePath}`
-  return RNFS.readFile(full, 'base64')
+  return FileSystem.readAsStringAsync(full, {
+    encoding: FileSystem.EncodingType.Base64,
+  })
 }
 
 /** Delete a file. */
 export async function deleteFile(repoName, filePath) {
   const full = `${getRepoPath(repoName)}/${filePath}`
-  const exists = await RNFS.exists(full)
-  if (exists) {
-    await RNFS.unlink(full)
+  const info = await FileSystem.getInfoAsync(full)
+  if (info.exists) {
+    await FileSystem.deleteAsync(full, { idempotent: true })
   }
   return true
 }
@@ -45,11 +51,11 @@ export async function renameFile(repoName, oldPath, newPath) {
   const src = `${getRepoPath(repoName)}/${oldPath}`
   const dest = `${getRepoPath(repoName)}/${newPath}`
   const parentDir = dest.substring(0, dest.lastIndexOf('/'))
-  const parentExists = await RNFS.exists(parentDir)
-  if (!parentExists) {
-    await RNFS.mkdir(parentDir)
+  const parentInfo = await FileSystem.getInfoAsync(parentDir)
+  if (!parentInfo.exists) {
+    await FileSystem.makeDirectoryAsync(parentDir, { intermediates: true })
   }
-  await RNFS.moveFile(src, dest)
+  await FileSystem.moveAsync({ from: src, to: dest })
   return true
 }
 
@@ -57,7 +63,7 @@ export async function renameFile(repoName, oldPath, newPath) {
 export async function copyFile(repoName, srcPath, destPath) {
   const src = `${getRepoPath(repoName)}/${srcPath}`
   const dest = `${getRepoPath(repoName)}/${destPath}`
-  await RNFS.copyFile(src, dest)
+  await FileSystem.copyAsync({ from: src, to: dest })
   return true
 }
 
@@ -71,17 +77,25 @@ export async function listFiles(repoName, subDir = '') {
     ? `${getRepoPath(repoName)}/${subDir}`
     : getRepoPath(repoName)
 
-  const items = await RNFS.readDir(dirPath)
+  const names = await FileSystem.readDirectoryAsync(dirPath)
+
+  const items = []
+  for (const name of names) {
+    if (name === '.git') continue
+    const fullPath = `${dirPath}/${name}`
+    const info = await FileSystem.getInfoAsync(fullPath, { size: true })
+    items.push({
+      name,
+      path: fullPath,
+      isDirectory: info.isDirectory === true,
+      size: Number(info.size ?? 0),
+      mtime: info.modificationTime
+        ? new Date(info.modificationTime * 1000)
+        : null,
+    })
+  }
 
   return items
-    .filter((f) => f.name !== '.git')
-    .map((f) => ({
-      name: f.name,
-      path: f.path,
-      isDirectory: f.isDirectory(),
-      size: Number(f.size ?? 0),
-      mtime: f.mtime,
-    }))
 }
 
 /** Recursively list all files in the repo (relative paths). */
@@ -90,18 +104,22 @@ export async function listFilesRecursive(repoName, subDir = '') {
   const results = []
 
   async function walk(dir, prefix) {
-    const items = await RNFS.readDir(dir)
-    for (const item of items) {
-      if (item.name === '.git') continue
-      const relPath = prefix ? `${prefix}/${item.name}` : item.name
-      if (item.isDirectory()) {
-        await walk(item.path, relPath)
+    const names = await FileSystem.readDirectoryAsync(dir)
+    for (const name of names) {
+      if (name === '.git') continue
+      const fullPath = `${dir}/${name}`
+      const relPath = prefix ? `${prefix}/${name}` : name
+      const info = await FileSystem.getInfoAsync(fullPath, { size: true })
+      if (info.isDirectory) {
+        await walk(fullPath, relPath)
       } else {
         results.push({
-          name: item.name,
+          name,
           path: relPath,
-          size: Number(item.size ?? 0),
-          mtime: item.mtime,
+          size: Number(info.size ?? 0),
+          mtime: info.modificationTime
+            ? new Date(info.modificationTime * 1000)
+            : null,
         })
       }
     }
@@ -119,16 +137,16 @@ export async function listFilesRecursive(repoName, subDir = '') {
 /** Create a directory inside the repo. */
 export async function createDirectory(repoName, dirPath) {
   const full = `${getRepoPath(repoName)}/${dirPath}`
-  await RNFS.mkdir(full)
+  await FileSystem.makeDirectoryAsync(full, { intermediates: true })
   return full
 }
 
 /** Delete a directory recursively. */
 export async function deleteDirectory(repoName, dirPath) {
   const full = `${getRepoPath(repoName)}/${dirPath}`
-  const exists = await RNFS.exists(full)
-  if (exists) {
-    await RNFS.unlink(full) // RNFS.unlink removes dirs recursively on Android
+  const info = await FileSystem.getInfoAsync(full)
+  if (info.exists) {
+    await FileSystem.deleteAsync(full, { idempotent: true })
   }
   return true
 }
@@ -160,7 +178,9 @@ export async function searchContent(repoName, query, options = {}) {
     if (matches.length >= maxResults) break
     try {
       const fullPath = `${getRepoPath(repoName)}/${file.path}`
-      const content = await RNFS.readFile(fullPath, 'utf8')
+      const content = await FileSystem.readAsStringAsync(fullPath, {
+        encoding: FileSystem.EncodingType.UTF8,
+      })
       const lines = content.split('\n')
       for (let i = 0; i < lines.length; i++) {
         if (lines[i].toLowerCase().includes(lowerQuery)) {
@@ -187,17 +207,20 @@ export async function searchContent(repoName, query, options = {}) {
 /** Get stat info for a file. */
 export async function getFileInfo(repoName, filePath) {
   const full = `${getRepoPath(repoName)}/${filePath}`
-  const stat = await RNFS.stat(full)
+  const info = await FileSystem.getInfoAsync(full, { size: true })
   return {
-    size: Number(stat.size ?? 0),
-    mtime: stat.mtime,
-    ctime: stat.ctime,
-    isDirectory: stat.isDirectory ? stat.isDirectory() : false,
+    size: Number(info.size ?? 0),
+    mtime: info.modificationTime
+      ? new Date(info.modificationTime * 1000)
+      : null,
+    ctime: null, // expo-file-system doesn't expose ctime
+    isDirectory: info.isDirectory === true,
   }
 }
 
 /** Check if a file exists. */
 export async function fileExists(repoName, filePath) {
   const full = `${getRepoPath(repoName)}/${filePath}`
-  return RNFS.exists(full)
+  const info = await FileSystem.getInfoAsync(full)
+  return info.exists
 }

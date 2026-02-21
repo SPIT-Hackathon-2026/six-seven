@@ -98,7 +98,14 @@ import {
   reassembleChunks,
 } from '../services/transferService'
 
-import { normalizePath, joinPath, basename, dirname, extname, getFreeDiskSpace } from '../utils/path'
+import {
+  normalizePath,
+  joinPath,
+  basename,
+  dirname,
+  extname,
+  getFreeDiskSpace,
+} from '../utils/path'
 
 // ── Test runner ──────────────────────────────────────────────────────
 
@@ -149,7 +156,10 @@ async function runTest(name, fn) {
     await fn()
   } catch (err) {
     failCount++
-    results.push({ status: 'FAIL', description: `${name} threw: ${err.message}` })
+    results.push({
+      status: 'FAIL',
+      description: `${name} threw: ${err.message}`,
+    })
     log(`  ❌ EXCEPTION: ${err.message}`)
   }
 }
@@ -170,12 +180,28 @@ const REPO_TRANSFER = `test-transfer-${TS}`
 
 async function testPathUtils() {
   await runTest('Path utilities', async () => {
-    assertEqual(normalizePath('/a//b///c/'), '/a/b/c', 'normalizePath removes double slashes and trailing slash')
+    assertEqual(
+      normalizePath('/a//b///c/'),
+      '/a/b/c',
+      'normalizePath removes double slashes and trailing slash',
+    )
     assertEqual(joinPath('a', 'b', 'c'), 'a/b/c', 'joinPath joins segments')
-    assertEqual(basename('/foo/bar/baz.txt'), 'baz.txt', 'basename extracts filename')
-    assertEqual(dirname('/foo/bar/baz.txt'), '/foo/bar', 'dirname extracts directory')
+    assertEqual(
+      basename('/foo/bar/baz.txt'),
+      'baz.txt',
+      'basename extracts filename',
+    )
+    assertEqual(
+      dirname('/foo/bar/baz.txt'),
+      '/foo/bar',
+      'dirname extracts directory',
+    )
     assertEqual(extname('file.js'), 'js', 'extname extracts extension')
-    assertEqual(extname('Makefile'), '', 'extname returns empty for no extension')
+    assertEqual(
+      extname('Makefile'),
+      '',
+      'extname returns empty for no extension',
+    )
   })
 }
 
@@ -199,7 +225,10 @@ async function testRepoManagement() {
     const info = await getRepoInfo(REPO)
     assertEqual(info.name, REPO, 'getRepoInfo returns correct name')
     assert(info.isGitRepo === true, 'getRepoInfo detects .git')
-    assert(typeof info.sizeFormatted === 'string', 'getRepoInfo returns formatted size')
+    assert(
+      typeof info.sizeFormatted === 'string',
+      'getRepoInfo returns formatted size',
+    )
   })
 }
 
@@ -215,7 +244,11 @@ async function testFileOperations() {
   await runTest('Write nested file', async () => {
     await writeFile(REPO, 'src/index.js', 'console.log("init")')
     const content = await readFile(REPO, 'src/index.js')
-    assertEqual(content, 'console.log("init")', 'nested file created with parent dir')
+    assertEqual(
+      content,
+      'console.log("init")',
+      'nested file created with parent dir',
+    )
   })
 
   await runTest('List files', async () => {
@@ -229,7 +262,11 @@ async function testFileOperations() {
     const all = await listFilesRecursive(REPO)
     const paths = all.map((f) => f.path)
     assertIncludes(paths, 'hello.txt', 'recursive list includes hello.txt')
-    assertIncludes(paths, 'src/index.js', 'recursive list includes src/index.js')
+    assertIncludes(
+      paths,
+      'src/index.js',
+      'recursive list includes src/index.js',
+    )
   })
 
   await runTest('File exists', async () => {
@@ -274,7 +311,11 @@ async function testFileOperations() {
   await runTest('Search content', async () => {
     const results = await searchContent(REPO, 'Hello World')
     assert(results.length > 0, 'searchContent finds "Hello World" in files')
-    assertEqual(results[0].path, 'hello.txt', 'searchContent returns correct file')
+    assertEqual(
+      results[0].path,
+      'hello.txt',
+      'searchContent returns correct file',
+    )
   })
 }
 
@@ -307,18 +348,28 @@ async function testStagingAndStatus() {
 async function testCommits() {
   await runTest('First commit', async () => {
     const sha = await commit(REPO, 'Initial commit')
-    assert(typeof sha === 'string' && sha.length === 40, 'commit returns 40-char SHA')
+    assert(
+      typeof sha === 'string' && sha.length === 40,
+      'commit returns 40-char SHA',
+    )
   })
 
   await runTest('Commit log', async () => {
     const log = await getLog(REPO)
     assert(log.length >= 1, 'log has at least one commit')
-    assertEqual(log[0].commit.message, 'Initial commit\n', 'log[0] message matches')
+    assertEqual(
+      log[0].commit.message,
+      'Initial commit\n',
+      'log[0] message matches',
+    )
   })
 
   await runTest('Resolve HEAD', async () => {
     const oid = await resolveRef(REPO, 'HEAD')
-    assert(typeof oid === 'string' && oid.length === 40, 'resolveRef HEAD returns oid')
+    assert(
+      typeof oid === 'string' && oid.length === 40,
+      'resolveRef HEAD returns oid',
+    )
   })
 
   await runTest('CommitAll shortcut', async () => {
@@ -336,7 +387,11 @@ async function testCommits() {
     assert(sha.length === 40, 'commitWithReflog returns SHA')
     const reflog = await getReflog(REPO)
     assert(reflog.length >= 1, 'reflog has entry')
-    assertEqual(reflog[reflog.length - 1].action, 'commit', 'reflog entry action is commit')
+    assertEqual(
+      reflog[reflog.length - 1].action,
+      'commit',
+      'reflog entry action is commit',
+    )
   })
 }
 
@@ -365,7 +420,11 @@ async function testBranches() {
     await writeFile(REPO, 'feature.txt', 'feature content')
     await commitAll(REPO, 'Add feature.txt')
     const log = await getLog(REPO)
-    assertEqual(log[0].commit.message, 'Add feature.txt\n', 'latest commit on feature-a')
+    assertEqual(
+      log[0].commit.message,
+      'Add feature.txt\n',
+      'latest commit on feature-a',
+    )
   })
 
   await runTest('Switch back to main', async () => {
@@ -381,7 +440,11 @@ async function testBranches() {
     await createBranch(REPO, 'to-delete')
     await deleteBranch(REPO, 'to-delete')
     const branches = await listBranches(REPO)
-    assertNotIncludes(branches, 'to-delete', 'to-delete removed from branch list')
+    assertNotIncludes(
+      branches,
+      'to-delete',
+      'to-delete removed from branch list',
+    )
   })
 }
 
@@ -414,39 +477,61 @@ async function testMerge() {
     assert(exists, 'feature.txt on main after merge')
   })
 
-  await runTest('Merge with divergent changes (conflict detection)', async () => {
-    // Set up a conflict scenario
-    // On main – edit a shared file
-    await writeFile(REPO, 'shared.txt', 'main content line 1\nmain line 2')
-    await commitAll(REPO, 'Add shared.txt on main')
+  await runTest(
+    'Merge with divergent changes (conflict detection)',
+    async () => {
+      // Set up a conflict scenario
+      // On main – edit a shared file
+      await writeFile(REPO, 'shared.txt', 'main content line 1\nmain line 2')
+      await commitAll(REPO, 'Add shared.txt on main')
 
-    // Create and switch to conflict-branch
-    await createBranch(REPO, 'conflict-branch')
-    await checkout(REPO, 'conflict-branch')
-    await writeFile(REPO, 'shared.txt', 'conflict content line 1\nconflict line 2')
-    await commitAll(REPO, 'Edit shared.txt on conflict-branch')
+      // Create and switch to conflict-branch
+      await createBranch(REPO, 'conflict-branch')
+      await checkout(REPO, 'conflict-branch')
+      await writeFile(
+        REPO,
+        'shared.txt',
+        'conflict content line 1\nconflict line 2',
+      )
+      await commitAll(REPO, 'Edit shared.txt on conflict-branch')
 
-    // Switch back to main and edit same file differently
-    await checkout(REPO, 'main')
-    await writeFile(REPO, 'shared.txt', 'different main content\nmain version 2')
-    await commitAll(REPO, 'Edit shared.txt differently on main')
+      // Switch back to main and edit same file differently
+      await checkout(REPO, 'main')
+      await writeFile(
+        REPO,
+        'shared.txt',
+        'different main content\nmain version 2',
+      )
+      await commitAll(REPO, 'Edit shared.txt differently on main')
 
-    // Attempt merge
-    const result = await mergeBranch(REPO, 'conflict-branch')
-    // Could be conflict or auto-resolved depending on isomorphic-git
-    if (result.conflicts) {
-      assert(Array.isArray(result.conflicts), 'conflicts is an array')
-      log(`    Detected ${result.conflicts.length} conflicted file(s): ${result.conflicts.join(', ')}`)
-    } else {
-      log('    Merge auto-resolved (no textual conflicts detected by isomorphic-git)')
-      assert(result.oid !== null, 'merge produced a commit oid')
-    }
-  })
+      // Attempt merge
+      const result = await mergeBranch(REPO, 'conflict-branch')
+      // Could be conflict or auto-resolved depending on isomorphic-git
+      if (result.conflicts) {
+        assert(Array.isArray(result.conflicts), 'conflicts is an array')
+        log(
+          `    Detected ${result.conflicts.length} conflicted file(s): ${result.conflicts.join(', ')}`,
+        )
+      } else {
+        log(
+          '    Merge auto-resolved (no textual conflicts detected by isomorphic-git)',
+        )
+        assert(result.oid !== null, 'merge produced a commit oid')
+      }
+    },
+  )
 
   await runTest('Get conflict versions', async () => {
     try {
-      const versions = await getConflictVersions(REPO, 'shared.txt', 'conflict-branch')
-      assert(typeof versions.base === 'string' || versions.base === null, 'base version retrieved')
+      const versions = await getConflictVersions(
+        REPO,
+        'shared.txt',
+        'conflict-branch',
+      )
+      assert(
+        typeof versions.base === 'string' || versions.base === null,
+        'base version retrieved',
+      )
       assert(typeof versions.ours === 'string', 'ours version retrieved')
       assert(typeof versions.theirs === 'string', 'theirs version retrieved')
     } catch (err) {
@@ -456,9 +541,17 @@ async function testMerge() {
 
   await runTest('Resolve conflict', async () => {
     try {
-      await resolveConflict(REPO, 'shared.txt', 'Resolved content\nFinal version')
+      await resolveConflict(
+        REPO,
+        'shared.txt',
+        'Resolved content\nFinal version',
+      )
       const content = await readFile(REPO, 'shared.txt')
-      assertEqual(content, 'Resolved content\nFinal version', 'resolved content written')
+      assertEqual(
+        content,
+        'Resolved content\nFinal version',
+        'resolved content written',
+      )
     } catch (err) {
       log(`    Skipped: ${err.message}`)
     }
@@ -472,7 +565,11 @@ async function testDiff() {
     await writeFile(REPO, 'hello.txt', 'Hello World Modified')
     const diff = await diffFile(REPO, 'hello.txt')
     assert(diff.oldContent !== null, 'old content from HEAD')
-    assertEqual(diff.newContent, 'Hello World Modified', 'new content from working dir')
+    assertEqual(
+      diff.newContent,
+      'Hello World Modified',
+      'new content from working dir',
+    )
     assert(diff.oldContent !== diff.newContent, 'old and new differ')
   })
 
@@ -486,14 +583,19 @@ async function testDiff() {
   await runTest('diffLines (pure text diff)', () => {
     const diffs = diffLines('line1\nline2\nline3', 'line1\nmodified\nline3')
     assert(Array.isArray(diffs), 'diffLines returns array')
-    const removed = diffs.find((d) => d.type === 'remove' && d.value === 'line2')
+    const removed = diffs.find(
+      (d) => d.type === 'remove' && d.value === 'line2',
+    )
     assert(removed !== undefined, 'detects removed line')
     const added = diffs.find((d) => d.type === 'add' && d.value === 'modified')
     assert(added !== undefined, 'detects added line')
   })
 
   await runTest('unifiedDiff', () => {
-    const result = unifiedDiff('a\nb\nc', 'a\nx\nc', { oldName: 'old.txt', newName: 'new.txt' })
+    const result = unifiedDiff('a\nb\nc', 'a\nx\nc', {
+      oldName: 'old.txt',
+      newName: 'new.txt',
+    })
     assert(result.includes('---'), 'unified diff has --- header')
     assert(result.includes('+++'), 'unified diff has +++ header')
   })
@@ -515,7 +617,10 @@ async function testThreeWayMerge() {
     const result = threeWayMerge(base, ours, theirs)
     assert(!result.hasConflicts, 'no conflicts in clean 3-way merge')
     assert(result.merged.includes('ours changed'), 'merged includes our change')
-    assert(result.merged.includes('theirs changed'), 'merged includes their change')
+    assert(
+      result.merged.includes('theirs changed'),
+      'merged includes their change',
+    )
   })
 
   await runTest('threeWayMerge – conflict', () => {
@@ -530,7 +635,10 @@ async function testThreeWayMerge() {
 
   await runTest('autoMerge', () => {
     const result = autoMerge('a\nb', 'a\nB', 'a\nb')
-    assert(!result.hasConflicts, 'autoMerge resolves cleanly when only one side changed')
+    assert(
+      !result.hasConflicts,
+      'autoMerge resolves cleanly when only one side changed',
+    )
     assert(result.merged.includes('B'), 'autoMerge picks the changed side')
   })
 }
@@ -624,7 +732,10 @@ async function testCodeExploration() {
 
   await runTest('Read file at ref', async () => {
     const content = await readFileAtRef(REPO, 'explore.js', 'HEAD')
-    assert(content.includes('function add'), 'readFileAtRef returns file content at HEAD')
+    assert(
+      content.includes('function add'),
+      'readFileAtRef returns file content at HEAD',
+    )
   })
 
   await runTest('List files at ref', async () => {
@@ -720,8 +831,14 @@ async function testTransferService() {
 async function testDiskSpace() {
   await runTest('Get free disk space', async () => {
     const info = await getFreeDiskSpace()
-    assert(typeof info.freeFormatted === 'string', 'returns formatted free space')
-    assert(typeof info.totalFormatted === 'string', 'returns formatted total space')
+    assert(
+      typeof info.freeFormatted === 'string',
+      'returns formatted free space',
+    )
+    assert(
+      typeof info.totalFormatted === 'string',
+      'returns formatted total space',
+    )
   })
 }
 

@@ -1,28 +1,28 @@
-import RNFS from 'react-native-fs'
+import * as FileSystem from 'expo-file-system/legacy'
 
 // =====================================================================
 //  BASE PATHS
 // =====================================================================
 
 /** Root directory for all repos. */
-export const REPO_BASE_PATH = RNFS.DocumentDirectoryPath + '/repos'
+export const REPO_BASE_PATH = FileSystem.documentDirectory + 'repos'
 
 /** Temp directory for transfers / staging. */
-export const TEMP_PATH = RNFS.CachesDirectoryPath + '/git-temp'
+export const TEMP_PATH = FileSystem.cacheDirectory + 'git-temp'
 
 /** Ensure the base repos directory exists. */
 export async function ensureRepoBaseExists() {
-  const exists = await RNFS.exists(REPO_BASE_PATH)
-  if (!exists) {
-    await RNFS.mkdir(REPO_BASE_PATH)
+  const info = await FileSystem.getInfoAsync(REPO_BASE_PATH)
+  if (!info.exists) {
+    await FileSystem.makeDirectoryAsync(REPO_BASE_PATH, { intermediates: true })
   }
 }
 
 /** Ensure the temp directory exists. */
 export async function ensureTempExists() {
-  const exists = await RNFS.exists(TEMP_PATH)
-  if (!exists) {
-    await RNFS.mkdir(TEMP_PATH)
+  const info = await FileSystem.getInfoAsync(TEMP_PATH)
+  if (!info.exists) {
+    await FileSystem.makeDirectoryAsync(TEMP_PATH, { intermediates: true })
   }
 }
 
@@ -95,21 +95,22 @@ export function relativePath(from, to) {
 
 /** Recursively ensure a directory path exists. */
 export async function mkdirp(dirPath) {
-  const exists = await RNFS.exists(dirPath)
-  if (!exists) {
-    await RNFS.mkdir(dirPath)
+  const info = await FileSystem.getInfoAsync(dirPath)
+  if (!info.exists) {
+    await FileSystem.makeDirectoryAsync(dirPath, { intermediates: true })
   }
 }
 
 /** Get available disk space (Android/iOS). */
 export async function getFreeDiskSpace() {
   try {
-    const space = await RNFS.getFSInfo()
+    const free = await FileSystem.getFreeDiskStorageAsync()
+    const total = await FileSystem.getTotalDiskCapacityAsync()
     return {
-      free: space.freeSpace,
-      total: space.totalSpace,
-      freeFormatted: formatBytes(space.freeSpace),
-      totalFormatted: formatBytes(space.totalSpace),
+      free,
+      total,
+      freeFormatted: formatBytes(free),
+      totalFormatted: formatBytes(total),
     }
   } catch {
     return { free: 0, total: 0, freeFormatted: 'N/A', totalFormatted: 'N/A' }

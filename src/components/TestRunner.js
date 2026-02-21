@@ -16,7 +16,7 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native'
-import { runAllTests } from '../__tests__/offlineGitTests'
+import { runAllTests } from '../utils/offlineGitTests'
 
 export default function TestRunner() {
   const [running, setRunning] = useState(false)
@@ -33,7 +33,9 @@ export default function TestRunner() {
       setDetails(result.details)
     } catch (err) {
       setSummary({ pass: 0, fail: 1, total: 1, elapsed: '0', details: [] })
-      setDetails([{ status: 'FAIL', description: `Runner crashed: ${err.message}` }])
+      setDetails([
+        { status: 'FAIL', description: `Runner crashed: ${err.message}` },
+      ])
     } finally {
       setRunning(false)
     }
@@ -56,18 +58,30 @@ export default function TestRunner() {
       </TouchableOpacity>
 
       {summary && (
-        <View style={[styles.summaryBox, summary.fail > 0 ? styles.summaryFail : styles.summaryPass]}>
+        <View
+          style={[
+            styles.summaryBox,
+            summary.fail > 0 ? styles.summaryFail : styles.summaryPass,
+          ]}
+        >
           <Text style={styles.summaryText}>
-            {summary.pass} passed  ·  {summary.fail} failed  ·  {summary.total} total  ·  {summary.elapsed}s
+            {summary.pass} passed · {summary.fail} failed · {summary.total}{' '}
+            total · {summary.elapsed}s
           </Text>
         </View>
       )}
 
-      <ScrollView style={styles.list} contentContainerStyle={{ paddingBottom: 40 }}>
+      <ScrollView
+        style={styles.list}
+        contentContainerStyle={{ paddingBottom: 40 }}
+      >
         {details.map((d, i) => (
           <View
             key={i}
-            style={[styles.row, d.status === 'PASS' ? styles.rowPass : styles.rowFail]}
+            style={[
+              styles.row,
+              d.status === 'PASS' ? styles.rowPass : styles.rowFail,
+            ]}
           >
             <Text style={styles.icon}>{d.status === 'PASS' ? '✅' : '❌'}</Text>
             <Text style={styles.desc} numberOfLines={2}>
@@ -81,8 +95,19 @@ export default function TestRunner() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0d1117', padding: 16, paddingTop: 48 },
-  title: { color: '#e6edf3', fontSize: 20, fontWeight: '700', marginBottom: 16, textAlign: 'center' },
+  container: {
+    flex: 1,
+    backgroundColor: '#0d1117',
+    padding: 16,
+    paddingTop: 48,
+  },
+  title: {
+    color: '#e6edf3',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
   button: {
     backgroundColor: '#238636',
     paddingVertical: 12,
