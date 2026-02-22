@@ -86,7 +86,7 @@ import { stash, stashPop } from '@/services/stashService';
 import { isOnline } from '@/services/networkService';
 import { generateCommitMessage, isAIAvailable } from '@/services/aiService';
 import { enqueuePush, syncRepo } from '@/services/offlineSyncService';
-import { isGitHubLinked, createGitHubRepo, getCachedUsername, listCollaborators, addCollaborator } from '@/services/githubAuth';
+import { isGitHubLinked, createGitHubRepo, getCachedUsername, listCollaborators, addCollaborator, removeCollaborator } from '@/services/githubAuth';
 import { withGitLock, checkStaleLock, clearStaleLock, detectGitHealthIssues } from '@/services/safeWriteService';
 import SyntaxHighlighter from '@/components/SyntaxHighlighter';
 
@@ -278,6 +278,8 @@ export default function RepoDetailScreen() {
    const [collabStatus, setCollabStatus] = useState('');
    const [collabStatusColor, setCollabStatusColor] = useState('#2ea043');
    const [addingCollab, setAddingCollab] = useState(false);
+   const [collaborators, setCollaborators] = useState<any[]>([]);
+   const [loadingCollabs, setLoadingCollabs] = useState(false);
    // Handler for adding collaborator
    const handleAddCollaborator = useCallback(async () => {
      if (!name || !collabUsername.trim()) {
@@ -289,14 +291,15 @@ export default function RepoDetailScreen() {
      setCollabStatus('');
      setCollabStatusColor('#2ea043');
      try {
-       // Get owner username from GitHub auth cache
-       const { getCachedUsername, addCollaborator } = await import('@/services/githubAuth');
-       const owner = getCachedUsername();
-       if (!owner) throw new Error('GitHub account not linked');
-       await addCollaborator(owner, name, collabUsername);
+       if (!remoteUrl) throw new Error('No remote URL configured');
+       const parsed = parseGitHubUrl(remoteUrl);
+       if (!parsed) throw new Error('Could not parse GitHub URL');
+       const { addCollaborator } = await import('@/services/githubAuth');
+       await addCollaborator(parsed.owner, parsed.repo, collabUsername);
        setCollabStatus('Collaborator added!');
        setCollabStatusColor('#2ea043');
        setCollabUsername('');
+       await loadCollaborators();
      } catch (err) {
        setCollabStatus('Failed to add collaborator');
        setCollabStatusColor('#f85149');
@@ -304,6 +307,67 @@ export default function RepoDetailScreen() {
        setAddingCollab(false);
      }
    }, [name, collabUsername]);
+
+   // Parse GitHub owner/repo from remote URL
+   const parseGitHubUrl = (url: string): { owner: string; repo: string } | null => {
+     try {
+       // Handle https://github.com/owner/repo.git or git@github.com:owner/repo.git
+       const match = url.match(/github\.com[/:](.*?)\/(.*?)(\.git)?$/);
+       if (match) {
+         return { owner: match[1], repo: match[2].replace('.git', '') };
+       }
+     } catch (err) {
+       console.warn('Failed to parse GitHub URL:', err);
+     }
+     return null;
+   };
+
+   // Load collaborators list
+   const loadCollaborators = useCallback(async () => {
+     if (!name || !ghLinked || !remoteUrl) return;
+     setLoadingCollabs(true);
+     try {
+       const parsed = parseGitHubUrl(remoteUrl);
+       if (!parsed) {
+         console.warn('Could not parse GitHub URL:', remoteUrl);
+         return;
+       }
+       const collabs = await listCollaborators(parsed.owner, parsed.repo);
+       setCollaborators(collabs || []);
+     } catch (err) {
+       console.warn('Failed to load collaborators:', err);
+       setCollaborators([]);
+     } finally {
+       setLoadingCollabs(false);
+     }
+   }, [name, ghLinked, remoteUrl]);
+
+   // Remove collaborator handler
+   const handleRemoveCollaborator = useCallback(async (username: string) => {
+     if (!name || !remoteUrl) return;
+     Alert.alert(
+       'Remove Collaborator',
+       `Remove ${username} from this repository?`,
+       [
+         { text: 'Cancel', style: 'cancel' },
+         {
+           text: 'Remove',
+           style: 'destructive',
+           onPress: async () => {
+             try {
+               const parsed = parseGitHubUrl(remoteUrl);
+               if (!parsed) throw new Error('Could not parse GitHub URL');
+               await removeCollaborator(parsed.owner, parsed.repo, username);
+               Alert.alert('Removed', `${username} has been removed`);
+               await loadCollaborators();
+             } catch (err: any) {
+               Alert.alert('Error', err?.message ?? 'Failed to remove collaborator');
+             }
+           },
+         },
+       ],
+     );
+   }, [name, remoteUrl]);
   /* ─── tree from flat list ─── */
   const tree = useMemo(() => buildTree(treeFiles), [treeFiles])
 
@@ -380,11 +444,34 @@ export default function RepoDetailScreen() {
       )
 
       // Load tree for code tab
-      try {
-        const files = await listFilesAtRef(name, br ?? 'main')
-        setTreeFiles(files)
-      } catch {
-        setTreeFiles([])
+      {
+        const refsToTry = Array.from(new Set([
+          br ?? 'main',
+          branch,
+          'HEAD',
+          'main',
+        ].filter(Boolean))) as string[]
+
+        let loaded = false
+        let lastTreeErr: unknown = null
+
+        for (const refName of refsToTry) {
+          try {
+            const files = await listFilesAtRef(name, refName)
+            if (files.length === 0 && treeFiles.length > 0) {
+              continue
+            }
+            setTreeFiles(files)
+            loaded = true
+            break
+          } catch (err) {
+            lastTreeErr = err
+          }
+        }
+
+        if (!loaded) {
+          console.warn('Failed to refresh file tree, keeping previous list:', lastTreeErr)
+        }
       }
 
       // Lazy / sparse repo indicator
@@ -404,12 +491,15 @@ export default function RepoDetailScreen() {
       setRemoteUrl(rUrl)
       const linked = await isGitHubLinked().catch(() => false)
       setGhLinked(linked)
+      if (linked && rUrl) {
+        loadCollaborators().catch(() => {})
+      }
     } catch (err: any) {
       Alert.alert('Error', err?.message ?? 'Failed to load repo data')
     } finally {
       setLoading(false)
     }
-  }, [name])
+  }, [name, branch, treeFiles.length])
 
   useFocusEffect(
     useCallback(() => {
@@ -1114,6 +1204,8 @@ export default function RepoDetailScreen() {
                       onPress={() => {
                         setViewingFile(null)
                         setFileContent('')
+                        setTreePath([])
+                        void loadRepoData()
                       }}
                       className="p-1 rounded bg-neutral-100 dark:bg-zinc-800"
                     >
@@ -1663,6 +1755,57 @@ export default function RepoDetailScreen() {
                     <Text className="text-xs mt-2" style={{ color: collabStatusColor }}>{collabStatus}</Text>
                   )}
                 </View>
+                
+                {/* Collaborators List */}
+                {remoteUrl && (
+                  <View className="mb-4">
+                    <Text className="text-neutral-500 text-xs font-bold mb-2">Collaborators</Text>
+                    {loadingCollabs ? (
+                      <View className="py-3 items-center">
+                        <ActivityIndicator size="small" color="#58a6ff" />
+                      </View>
+                    ) : collaborators.length === 0 ? (
+                      <Text className="text-neutral-500 text-xs italic">No collaborators yet</Text>
+                    ) : (
+                      <View className="rounded-lg bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden">
+                        {collaborators.map((collab, idx) => (
+                          <View
+                            key={collab.login}
+                            className={`flex-row items-center justify-between px-3 py-2.5 ${
+                              idx < collaborators.length - 1 ? 'border-b border-neutral-100 dark:border-zinc-800' : ''
+                            }`}
+                          >
+                            <View className="flex-row items-center gap-2 flex-1">
+                              {collab.avatar_url && (
+                                <Image
+                                  source={{ uri: collab.avatar_url }}
+                                  className="w-6 h-6 rounded-full"
+                                />
+                              )}
+                              <View className="flex-1">
+                                <Text className="text-black dark:text-neutral-100 text-sm font-medium">
+                                  {collab.login}
+                                </Text>
+                                {collab.permissions && (
+                                  <Text className="text-neutral-500 text-[10px]">
+                                    {collab.permissions.admin ? 'Admin' : collab.permissions.push ? 'Write' : 'Read'}
+                                  </Text>
+                                )}
+                              </View>
+                            </View>
+                            <TouchableOpacity
+                              onPress={() => handleRemoveCollaborator(collab.login)}
+                              className="px-2 py-1 rounded bg-red-50 dark:bg-red-900/20"
+                            >
+                              <Text className="text-red-600 dark:text-red-400 text-xs font-semibold">Remove</Text>
+                            </TouchableOpacity>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                )}
+                
                 {remoteUrl ? (
                   <View>
                     <View className="flex-row items-center mb-2">
@@ -1841,6 +1984,17 @@ export default function RepoDetailScreen() {
                 )}
               </TouchableOpacity>
             </View>
+            <TouchableOpacity
+              className="mt-2 py-3 rounded-xl bg-[#1f6feb] items-center"
+              onPress={handleCommit}
+              disabled={committing}
+            >
+              {committing ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text className="text-white text-sm font-bold">Commit</Text>
+              )}
+            </TouchableOpacity>
 
             {/* Status summary */}
             <View className="mt-5 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden ">

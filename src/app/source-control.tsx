@@ -36,6 +36,7 @@ import {
   getRemoteUrl,
   getLog,
 } from '@/services/gitService'
+import { generateCommitMessage } from '@/services/aiService'
 import { isGitHubLinked } from '@/services/githubAuth'
 import { enqueuePush } from '@/services/offlineSyncService'
 import {
@@ -80,6 +81,7 @@ export default function SourceControlScreen() {
   const [loading, setLoading] = useState(false)
   const [commitMsg, setCommitMsg] = useState('')
   const [committing, setCommitting] = useState(false)
+  const [generatingMsg, setGeneratingMsg] = useState(false)
   const [showRepoPicker, setShowRepoPicker] = useState(false)
   const [diffText, setDiffText] = useState<string | null>(null)
   const [diffFile_, setDiffFile_] = useState<string | null>(null)
@@ -212,6 +214,27 @@ export default function SourceControlScreen() {
       setCommitting(false)
     }
   }, [selectedRepo, commitMsg, branch, refreshStatus])
+
+  const handleGenerateCommitMsg = useCallback(async () => {
+    if (!selectedRepo || files.length === 0) return
+    setGeneratingMsg(true)
+    try {
+      const filePaths = files.map((f) => f.filepath)
+      const diffText = files
+        .map((f) => {
+          const status = f.status.replace('*', '')
+          const letter = status === 'added' ? 'A' : status === 'deleted' ? 'D' : 'M'
+          return `${letter} ${f.filepath}`
+        })
+        .join('\n')
+      const msg = await generateCommitMessage(diffText, filePaths)
+      setCommitMsg(msg ?? '')
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to generate commit message')
+    } finally {
+      setGeneratingMsg(false)
+    }
+  }, [selectedRepo, files])
 
   const handleStash = useCallback(async () => {
     if (!selectedRepo) return
@@ -666,14 +689,34 @@ export default function SourceControlScreen() {
           <>
             {/* Commit box */}
             <View className="rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 p-4 mb-5 ">
-              <TextInput
-                className="text-black dark:text-white text-sm min-h-[40px] bg-neutral-50 dark:bg-black rounded-lg px-3 py-2 border border-neutral-200 dark:border-zinc-800"
-                placeholder="Commit message…"
-                placeholderTextColor="#8b949e"
-                value={commitMsg}
-                onChangeText={setCommitMsg}
-                multiline
-              />
+              <View className="flex-row items-start gap-2">
+                <TextInput
+                  className="flex-1 text-black dark:text-white text-sm min-h-[40px] bg-neutral-50 dark:bg-black rounded-lg px-3 py-2 border border-neutral-200 dark:border-zinc-800"
+                  placeholder="Commit message (tap ✨ to generate)"
+                  placeholderTextColor="#8b949e"
+                  value={commitMsg}
+                  onChangeText={setCommitMsg}
+                  multiline
+                />
+                <TouchableOpacity
+                  onPress={handleGenerateCommitMsg}
+                  disabled={generatingMsg || files.length === 0}
+                  className="items-center justify-center rounded-lg border px-3 py-2"
+                  style={{
+                    backgroundColor: generatingMsg ? '#1f2937' : '#1f6feb22',
+                    borderColor: '#1f6feb88',
+                    opacity: files.length === 0 ? 0.4 : 1,
+                    minWidth: 44,
+                    minHeight: 40,
+                  }}
+                >
+                  {generatingMsg ? (
+                    <ActivityIndicator size="small" color="#58a6ff" />
+                  ) : (
+                    <Text style={{ fontSize: 18 }}>✨</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
               <View className="flex-row gap-3 mt-3">
                 <TouchableOpacity
                   className="flex-1 py-2.5 rounded-lg bg-[#1f6feb] items-center "
