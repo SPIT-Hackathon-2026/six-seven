@@ -964,6 +964,18 @@ export default function RepoDetailScreen() {
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 4 }}>
           <TouchableOpacity
+            className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800"
+            onPress={() =>
+              router.push({
+                pathname: '/repo/[name]/chat' as any,
+                params: { name },
+              })
+            }
+          >
+            <MessageCircle size={14} color="#58a6ff" className="mr-1.5" />
+            <Text className="text-[#58a6ff] text-xs font-semibold">Chat</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             className="flex-row items-center px-3 py-2 rounded-lg bg-neutral-100 dark:bg-black border border-neutral-200 dark:border-zinc-800 "
             onPress={() =>
               router.push({
