@@ -27,7 +27,39 @@ export async function addCollaborator(
   )
   if (resp.status === 201 || resp.status === 204) return true
   const body = await resp.text()
+  if (resp.status === 404 || resp.status === 403) {
+    throw new Error(
+      `GitHub API ${resp.status}: Cannot manage collaborators.\n\n` +
+      `Most likely cause: your PAT needs the full "repo" scope.\n` +
+      `Go to github.com → Settings → Developer settings → Personal access tokens → ` +
+      `regenerate your token with the "repo" checkbox ticked.`
+    )
+  }
   throw new Error(`GitHub API ${resp.status}: ${body.slice(0, 300)}`)
+}
+
+/**
+ * List pending invitations for a repo.
+ * Returns array of { id, invitee: { login }, inviter: { login }, created_at }
+ */
+export async function listPendingInvitations(owner, repo) {
+  const auth = await _load()
+  if (!auth?.token) throw new Error('GitHub PAT not configured')
+  const resp = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/invitations?t=${Date.now()}`,
+    {
+      headers: {
+        Authorization: `token ${auth.token}`,
+        Accept: 'application/vnd.github+json',
+        'Cache-Control': 'no-cache',
+      },
+    }
+  )
+  if (!resp.ok) {
+    const body = await resp.text()
+    throw new Error(`GitHub API ${resp.status}: ${body.slice(0, 200)}`)
+  }
+  return resp.json()
 }
 
 /**
@@ -190,11 +222,12 @@ export async function listCollaborators(owner, repo) {
   const auth = await _load()
   if (!auth?.token) throw new Error('GitHub PAT not configured')
   const resp = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/collaborators`,
+    `https://api.github.com/repos/${owner}/${repo}/collaborators?t=${Date.now()}`,
     {
       headers: {
         Authorization: `token ${auth.token}`,
         Accept: 'application/vnd.github+json',
+        'Cache-Control': 'no-cache',
       },
     },
   )

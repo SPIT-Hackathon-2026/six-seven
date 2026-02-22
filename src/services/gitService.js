@@ -261,10 +261,18 @@ export async function renameBranch(repoName, oldName, newName) {
   await git.renameBranch({ fs, dir, ref: newName, oldref: oldName })
 }
 
-/** List all local branches. */
+/** List all local and remote branches. */
 export async function listBranches(repoName) {
   const dir = getRepoPath(repoName)
-  return git.listBranches({ fs, dir })
+  const local = await git.listBranches({ fs, dir })
+  const remote = await git.listBranches({ fs, dir, remote: 'origin' }).catch(() => [])
+  
+  // Combine, deduplicate, and format remote branches as 'origin/branch'
+  const all = new Set(local)
+  for (const r of remote) {
+    all.add(`origin/${r}`)
+  }
+  return Array.from(all).sort()
 }
 
 /** Get the current branch name (null if detached HEAD). */
@@ -276,6 +284,17 @@ export async function currentBranch(repoName) {
 /** Checkout a branch or commit. */
 export async function checkout(repoName, ref, options = {}) {
   const dir = getRepoPath(repoName)
+
+  // If user selects 'origin/foo', create a local 'foo' branch if it doesn't exist
+  if (ref.startsWith('origin/')) {
+    const localBranch = ref.replace('origin/', '')
+    const localBranches = await git.listBranches({ fs, dir })
+    if (!localBranches.includes(localBranch)) {
+      await git.branch({ fs, dir, ref: localBranch, object: ref })
+    }
+    ref = localBranch
+  }
+
   await git.checkout({
     fs,
     dir,
@@ -395,6 +414,27 @@ export async function detectConflicts(repoName, theirBranch) {
     }
   }
   return conflicts
+}
+
+/**
+ * Check if the repository is currently in a conflicted merge state.
+ * Returns { theirBranch: string, conflicts: string[] } or null.
+ */
+export async function getPendingConflicts(repoName) {
+  const dir = getRepoPath(repoName)
+  const mergeHeadPath = `${dir}/.git/MERGE_HEAD`
+  try {
+    const info = await FileSystem.getInfoAsync(mergeHeadPath)
+    if (!info.exists) return null
+    const theirOid = (await FileSystem.readAsStringAsync(mergeHeadPath)).trim()
+    const conflicts = await detectConflicts(repoName, theirOid)
+    return {
+      theirBranch: theirOid.slice(0, 7),
+      conflicts,
+    }
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -1109,7 +1149,7 @@ export async function pullRemote(repoName, options = {}) {
   await fetchRemote(repoName, {
     remote,
     ref: branch,
-    singleBranch: true,
+    singleBranch: false,
     onProgress: options.onProgress,
   })
 

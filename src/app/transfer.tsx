@@ -23,7 +23,7 @@ import { useFocusEffect } from 'expo-router'
 import { FolderGit2, ChevronDown, ChevronUp } from 'lucide-react-native'
 
 import { listRepos, getRepoPath } from '../services/repoService'
-import { initRepo, getLog } from '../services/gitService'
+import { initRepo, getLog, stageAll, commit } from '../services/gitService'
 import { exportPatchSince } from '../services/transferService'
 
 // ─── helpers ────────────────────────────────────────────────────────
@@ -315,7 +315,7 @@ export default function TransferScreen() {
 
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: 'application/zip',
+        type: ['application/zip', 'application/json'],
         copyToCacheDirectory: true,
       })
 
@@ -326,7 +326,72 @@ export default function TransferScreen() {
       }
 
       const uri = result.assets[0].uri
-      const fileName = result.assets[0].name ?? 'imported-repo.zip'
+      const fileName = result.assets[0].name ?? 'imported-file'
+
+      // ── Handle JSON Patch Import ──
+      if (fileName.toLowerCase().endsWith('.json')) {
+        setStatus(`Reading patch ${fileName}…`)
+        const jsonStr = await FileSystem.readAsStringAsync(uri, {
+          encoding: FileSystem.EncodingType.UTF8,
+        })
+        const patch = JSON.parse(jsonStr)
+
+        if (!patch.repoName || !patch.files) {
+          throw new Error('Invalid patch file format.')
+        }
+
+        const targetRepo = patch.repoName
+        const targetDir = getRepoPath(targetRepo)
+
+        // Ensure the directory exists (create repo folder if it doesn't)
+        await FileSystem.makeDirectoryAsync(targetDir, { intermediates: true })
+
+        setStatus('Applying patch files…')
+        let count = 0
+        for (const f of patch.files) {
+          const destPath = targetDir + '/' + f.filepath
+          const folder = destPath.substring(0, destPath.lastIndexOf('/'))
+          await FileSystem.makeDirectoryAsync(folder, { intermediates: true })
+          await FileSystem.writeAsStringAsync(destPath, f.content, {
+            encoding: FileSystem.EncodingType.Base64,
+          })
+          count++
+        }
+
+        try {
+          setStatus('Committing patch…')
+          await stageAll(targetRepo)
+          
+          let commitMsg = 'Applied incremental patch sync\n\nOriginal commits included:\n'
+          if (patch.commits && patch.commits.length > 0) {
+            // commits are exported from newest to oldest, reverse them for the log
+            const chronological = [...patch.commits].reverse()
+            chronological.forEach((c: any) => {
+              commitMsg += `- ${c.message.trim()} (${c.oid.slice(0, 7)})\n`
+            })
+          }
+          
+          const author = patch.commits?.[0]?.author || undefined
+          await commit(targetRepo, commitMsg, { author })
+          
+          setStatus(`Applied patch to "${targetRepo}" ✓`)
+          Alert.alert(
+            'Patch Applied',
+            `Successfully imported and committed ${count} file changes to "${targetRepo}".\nCheck the Commit History to view the imported patch!`,
+          )
+        } catch (err: any) {
+          Alert.alert(
+            'Patch Files Written',
+            `Files were extracted but the automatic commit failed: ${err.message}.\nYou can manually commit them in the Commit tab.`,
+          )
+        }
+
+        refresh()
+        setBusy(false)
+        return
+      }
+
+      // ── Handle ZIP Repo Import ──
       const repoName = fileName
         .replace(/\.zip$/i, '')
         .replace(/[^a-zA-Z0-9_-]/g, '-')
@@ -459,17 +524,17 @@ export default function TransferScreen() {
     <>
       {/* Header */}
       <View className="px-4 pt-6 pb-3">
-        <Text className="text-[#e6edf3] text-xl font-bold">
+        <Text className="text-black dark:text-neutral-100 text-xl font-bold">
           Transfer Repository
         </Text>
-        <Text className="text-[#8b949e] text-sm mt-1">
+        <Text className="text-neutral-500 dark:text-neutral-400 text-sm mt-1">
           Export as .zip via any sharing channel, or import a .zip file
         </Text>
       </View>
 
       {/* Repo picker */}
       <View className="px-4 mb-2">
-        <Text className="text-[#8b949e] text-xs font-semibold uppercase tracking-wider mb-2">
+        <Text className="text-neutral-500 dark:text-neutral-400 text-xs font-semibold uppercase tracking-wider mb-2">
           Select repo to export
         </Text>
       </View>
@@ -482,14 +547,14 @@ export default function TransferScreen() {
       <View className="px-4 mt-4 gap-3">
         <TouchableOpacity
           className={`py-3 rounded-lg items-center ${
-            selected && !busy ? 'bg-[#58a6ff]' : 'bg-[#111111]'
+            selected && !busy ? 'bg-[#58a6ff]' : 'bg-neutral-100 dark:bg-zinc-800'
           }`}
           onPress={handleExport}
           disabled={busy}
         >
           <Text
             className={`font-semibold text-base ${
-              selected && !busy ? 'text-[#000000]' : 'text-[#484f58]'
+              selected && !busy ? 'text-white dark:text-black' : 'text-neutral-500 dark:text-neutral-400'
             }`}
           >
             Export & Share .zip
@@ -499,15 +564,15 @@ export default function TransferScreen() {
         <TouchableOpacity
           className={`py-3 rounded-lg items-center border ${
             selected && !busy
-              ? 'bg-[#0a0a0a] border-[#d2a8ff55]'
-              : 'bg-[#0a0a0a] border-[#1a1a1a]'
+              ? 'bg-neutral-50 dark:bg-zinc-900 border-[#d2a8ff55]'
+              : 'bg-neutral-50 dark:bg-zinc-900 border-neutral-200 dark:border-zinc-800'
           }`}
           onPress={handleExportQR}
           disabled={busy || !selected}
         >
           <Text
             className={`font-semibold text-base ${
-              selected && !busy ? 'text-[#d2a8ff]' : 'text-[#484f58]'
+              selected && !busy ? 'text-[#d2a8ff]' : 'text-neutral-500 dark:text-neutral-400'
             }`}
           >
             Generate QR
@@ -515,7 +580,7 @@ export default function TransferScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          className="py-3 rounded-lg items-center border bg-[#0a0a0a] border-[#1a1a1a]"
+          className="py-3 rounded-lg items-center border bg-neutral-50 dark:bg-zinc-900 border-neutral-200 dark:border-zinc-800"
           onPress={openScanner}
           disabled={busy}
         >
@@ -527,83 +592,18 @@ export default function TransferScreen() {
         <TouchableOpacity
           className={`py-3 rounded-lg items-center border ${
             busy
-              ? 'bg-[#111111] border-[#1a1a1a]'
-              : 'bg-[#0a0a0a] border-[#1a1a1a]'
+              ? 'bg-neutral-100 dark:bg-zinc-800 border-neutral-200 dark:border-zinc-800'
+              : 'bg-neutral-50 dark:bg-zinc-900 border-neutral-200 dark:border-zinc-800'
           }`}
           onPress={handleImport}
           disabled={busy}
         >
           <Text
             className={`font-semibold text-base ${
-              busy ? 'text-[#484f58]' : 'text-[#58a6ff]'
+              busy ? 'text-neutral-500 dark:text-neutral-400' : 'text-[#58a6ff]'
             }`}
           >
-            Import .zip file
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Actions */}
-      <View className="px-4 mt-4 gap-3">
-        <TouchableOpacity
-          className={`py-3 rounded-lg items-center ${
-            selected && !busy ? 'bg-[#58a6ff]' : 'bg-[#111111]'
-          }`}
-          onPress={handleExport}
-          disabled={busy}
-        >
-          <Text
-            className={`font-semibold text-base ${
-              selected && !busy ? 'text-[#000000]' : 'text-[#484f58]'
-            }`}
-          >
-            Export & Share .zip
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          className={`py-3 rounded-lg items-center border ${
-            selected && !busy
-              ? 'bg-[#0a0a0a] border-[#d2a8ff55]'
-              : 'bg-[#0a0a0a] border-[#1a1a1a]'
-          }`}
-          onPress={handleExportQR}
-          disabled={busy || !selected}
-        >
-          <Text
-            className={`font-semibold text-base ${
-              selected && !busy ? 'text-[#d2a8ff]' : 'text-[#484f58]'
-            }`}
-          >
-            Generate QR
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          className="py-3 rounded-lg items-center border bg-[#0a0a0a] border-[#1a1a1a]"
-          onPress={openScanner}
-          disabled={busy}
-        >
-          <Text className="font-semibold text-base text-[#7ee787]">
-            Scan QR
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          className={`py-3 rounded-lg items-center border ${
-            busy
-              ? 'bg-[#111111] border-[#1a1a1a]'
-              : 'bg-[#0a0a0a] border-[#1a1a1a]'
-          }`}
-          onPress={handleImport}
-          disabled={busy}
-        >
-          <Text
-            className={`font-semibold text-base ${
-              busy ? 'text-[#484f58]' : 'text-[#58a6ff]'
-            }`}
-          >
-            Import .zip file
+            Import .zip / .json patch
           </Text>
         </TouchableOpacity>
       </View>
@@ -612,7 +612,7 @@ export default function TransferScreen() {
       {(busy || status) && (
         <View className="px-4 mt-4 flex-row items-center gap-2">
           {busy && <ActivityIndicator color="#58a6ff" size="small" />}
-          <Text className="text-[#8b949e] text-sm flex-1">{status}</Text>
+          <Text className="text-neutral-500 dark:text-neutral-400 text-sm flex-1">{status}</Text>
         </View>
       )}
 
@@ -626,10 +626,10 @@ export default function TransferScreen() {
           }}
         >
           <View>
-            <Text className="text-[#e6edf3] text-base font-bold">
+            <Text className="text-black dark:text-neutral-100 text-base font-bold">
               Incremental Patch Sync
             </Text>
-            <Text className="text-[#484f58] text-xs mt-0.5">
+            <Text className="text-neutral-500 dark:text-neutral-400 text-xs mt-0.5">
               Export only changes since a specific commit
             </Text>
           </View>
@@ -637,10 +637,10 @@ export default function TransferScreen() {
         </TouchableOpacity>
 
         {showPatchSync && (
-          <View className="mt-2 rounded-lg bg-[#0a0a0a] border border-[#1a1a1a] overflow-hidden">
+          <View className="mt-2 rounded-lg bg-neutral-50 dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden">
             {!selected ? (
               <View className="px-3 py-4 items-center">
-                <Text className="text-[#484f58] text-sm">
+                <Text className="text-neutral-500 dark:text-neutral-400 text-sm">
                   Select a repository above first
                 </Text>
               </View>
@@ -650,12 +650,12 @@ export default function TransferScreen() {
               </View>
             ) : patchCommits.length === 0 ? (
               <View className="px-3 py-4 items-center">
-                <Text className="text-[#484f58] text-sm">No commits found</Text>
+                <Text className="text-neutral-500 dark:text-neutral-400 text-sm">No commits found</Text>
               </View>
             ) : (
               <>
-                <View className="px-3 py-2 bg-[#111111] border-b border-[#1a1a1a]">
-                  <Text className="text-[#8b949e] text-xs">
+                <View className="px-3 py-2 bg-neutral-100 dark:bg-zinc-800 border-b border-neutral-200 dark:border-zinc-800">
+                  <Text className="text-neutral-500 dark:text-neutral-400 text-xs">
                     Select the base commit (changes after this will be exported)
                   </Text>
                 </View>
@@ -663,7 +663,7 @@ export default function TransferScreen() {
                   {patchCommits.map((c) => (
                     <TouchableOpacity
                       key={c.oid}
-                      className={`px-3 py-2.5 border-b border-[#111111] flex-row items-center ${
+                      className={`px-3 py-2.5 border-b border-neutral-100 dark:border-zinc-800 flex-row items-center ${
                         selectedCommit === c.oid ? 'bg-[#1f6feb15]' : ''
                       }`}
                       onPress={() => setSelectedCommit(c.oid)}
@@ -685,12 +685,12 @@ export default function TransferScreen() {
                       </View>
                       <View className="flex-1">
                         <Text
-                          className="text-[#e6edf3] text-xs"
+                          className="text-black dark:text-neutral-100 text-xs"
                           numberOfLines={1}
                         >
                           {c.message.trim()}
                         </Text>
-                        <Text className="text-[#484f58] text-[10px]">
+                        <Text className="text-neutral-500 dark:text-neutral-400 text-[10px]">
                           {c.oid.slice(0, 7)} ·{' '}
                           {c.timestamp
                             ? new Date(c.timestamp * 1000).toLocaleDateString()
@@ -702,14 +702,14 @@ export default function TransferScreen() {
                 </ScrollView>
                 <TouchableOpacity
                   className={`mx-3 my-2 py-2 rounded-lg items-center ${
-                    selectedCommit && !busy ? 'bg-[#58a6ff]' : 'bg-[#111111]'
+                    selectedCommit && !busy ? 'bg-[#58a6ff]' : 'bg-neutral-100 dark:bg-zinc-800'
                   }`}
                   onPress={handlePatchExport}
                   disabled={busy || !selectedCommit}
                 >
                   <Text
                     className={`font-semibold text-sm ${
-                      selectedCommit && !busy ? 'text-[#000000]' : 'text-[#484f58]'
+                      selectedCommit && !busy ? 'text-white dark:text-black' : 'text-neutral-500 dark:text-neutral-400'
                     }`}
                   >
                     Export Patch
@@ -724,7 +724,7 @@ export default function TransferScreen() {
   )
 
   return (
-    <View className="flex-1 bg-[#000000]">
+    <View className="flex-1 bg-white dark:bg-black">
       <FlatList
         data={repos}
         keyExtractor={(item) => item.name}
@@ -736,13 +736,13 @@ export default function TransferScreen() {
             className={`flex-row items-center justify-between px-3 py-2.5 mb-1.5 mx-4 rounded-lg border ${
               selected === item.name
                 ? 'bg-[#1f6feb11] border-[#1f6feb33]'
-                : 'bg-[#0a0a0a] border-[#1a1a1a]'
+                : 'bg-neutral-50 dark:bg-zinc-900 border-neutral-200 dark:border-zinc-800'
             }`}
             onPress={() => setSelected(item.name)}
           >
             <View className="flex-row items-center gap-2">
               <FolderGit2 size={16} color={selected === item.name ? "#58a6ff" : "#8b949e"} />
-              <Text className={`text-sm font-medium ${selected === item.name ? 'text-[#58a6ff]' : 'text-[#e6edf3]'}`}>
+              <Text className={`text-sm font-medium ${selected === item.name ? 'text-[#58a6ff]' : 'text-black dark:text-neutral-100'}`}>
                 {item.name}
               </Text>
             </View>
@@ -752,7 +752,7 @@ export default function TransferScreen() {
           </TouchableOpacity>
         )}
         ListEmptyComponent={
-          <Text className="text-[#484f58] text-sm text-center py-4 px-4">
+          <Text className="text-neutral-500 dark:text-neutral-400 text-sm text-center py-4 px-4">
             No repositories found
           </Text>
         }
@@ -985,118 +985,6 @@ export default function TransferScreen() {
         </View>
       </Modal>
 
-      {/* Status bar */}
-      {(busy || status) && (
-        <View className="px-4 mt-4 flex-row items-center gap-2">
-          {busy && <ActivityIndicator color="#58a6ff" size="small" />}
-          <Text className="text-[#8b949e] text-sm flex-1">{status}</Text>
-        </View>
-      )}
-
-      {/* ── Incremental Patch Sync ── */}
-      <View className="px-4 mt-6">
-        <TouchableOpacity
-          className="flex-row items-center justify-between py-2"
-          onPress={() => {
-            setShowPatchSync(!showPatchSync)
-            if (!showPatchSync && selected) loadPatchCommits()
-          }}
-        >
-          <View>
-            <Text className="text-[#e6edf3] text-base font-bold">
-              Incremental Patch Sync
-            </Text>
-            <Text className="text-[#484f58] text-xs mt-0.5">
-              Export only changes since a specific commit
-            </Text>
-          </View>
-          {showPatchSync ? <ChevronUp size={16} color="#8b949e" /> : <ChevronDown size={16} color="#8b949e" />}
-        </TouchableOpacity>
-
-        {showPatchSync && (
-          <View className="mt-2 rounded-lg bg-[#0a0a0a] border border-[#1a1a1a] overflow-hidden">
-            {!selected ? (
-              <View className="px-3 py-4 items-center">
-                <Text className="text-[#484f58] text-sm">
-                  Select a repository above first
-                </Text>
-              </View>
-            ) : loadingCommits ? (
-              <View className="py-4 items-center">
-                <ActivityIndicator color="#58a6ff" size="small" />
-              </View>
-            ) : patchCommits.length === 0 ? (
-              <View className="px-3 py-4 items-center">
-                <Text className="text-[#484f58] text-sm">No commits found</Text>
-              </View>
-            ) : (
-              <>
-                <View className="px-3 py-2 bg-[#111111] border-b border-[#1a1a1a]">
-                  <Text className="text-[#8b949e] text-xs">
-                    Select the base commit (changes after this will be exported)
-                  </Text>
-                </View>
-                <ScrollView style={{ maxHeight: 200 }}>
-                  {patchCommits.map((c) => (
-                    <TouchableOpacity
-                      key={c.oid}
-                      className={`px-3 py-2.5 border-b border-[#111111] flex-row items-center ${
-                        selectedCommit === c.oid ? 'bg-[#1f6feb15]' : ''
-                      }`}
-                      onPress={() => setSelectedCommit(c.oid)}
-                    >
-                      <View
-                        className="w-4 h-4 rounded-full border mr-2 items-center justify-center"
-                        style={{
-                          borderColor:
-                            selectedCommit === c.oid ? '#58a6ff' : '#1a1a1a',
-                          backgroundColor:
-                            selectedCommit === c.oid
-                              ? '#1f6feb'
-                              : 'transparent',
-                        }}
-                      >
-                        {selectedCommit === c.oid && (
-                          <View className="w-2 h-2 rounded-full bg-white" />
-                        )}
-                      </View>
-                      <View className="flex-1">
-                        <Text
-                          className="text-[#e6edf3] text-xs"
-                          numberOfLines={1}
-                        >
-                          {c.message.trim()}
-                        </Text>
-                        <Text className="text-[#484f58] text-[10px]">
-                          {c.oid.slice(0, 7)} ·{' '}
-                          {c.timestamp
-                            ? new Date(c.timestamp * 1000).toLocaleDateString()
-                            : ''}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-                <TouchableOpacity
-                  className={`mx-3 my-2 py-2 rounded-lg items-center ${
-                    selectedCommit && !busy ? 'bg-[#58a6ff]' : 'bg-[#111111]'
-                  }`}
-                  onPress={handlePatchExport}
-                  disabled={busy || !selectedCommit}
-                >
-                  <Text
-                    className={`font-semibold text-sm ${
-                      selectedCommit && !busy ? 'text-[#000000]' : 'text-[#484f58]'
-                    }`}
-                  >
-                    Export Patch
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        )}
-      </View>
     </View>
   )
 }

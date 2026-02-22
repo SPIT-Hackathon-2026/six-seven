@@ -26,57 +26,23 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white dark:bg-black">
-      <View className="flex-1 px-6 justify-center pb-40">
-        <View className="items-center mb-10">
+      <View className="flex-1 px-6 justify-center pb-10">
+        <View className="items-center  mb-4">
           <Image
             source={require('@/assets/images/logo.png')}
-            style={{ width: 260, height: 260, marginBottom: 16 }}
+            style={{ width: 260, height: 260, marginBottom: -50 }}
             resizeMode="contain"
           />
           <Text className="text-black dark:text-white text-3xl font-bold">Welcome to GitLane</Text>
-          <Text className="text-neutral-500 text-base mt-2">Sign in to sync your repositories</Text>
         </View>
-
-        <View className="space-y-4 gap-4">
-          <View>
-            <Text className="text-neutral-500 text-sm font-semibold mb-2">Email Address</Text>
-            <View className="flex-row items-center bg-neutral-100 dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 rounded-lg px-3">
-              <Mail size={20} color="#8b949e" />
-              <TextInput
-                className="flex-1 text-black dark:text-white py-3 px-3 text-base"
-                placeholder="user@gmail.com"
-                placeholderTextColor="#8b949e"
-                autoCapitalize="none"
-                keyboardType="email-address"
-                value={email}
-                onChangeText={setEmail}
-              />
-            </View>
-          </View>
-
-          <View>
-            <Text className="text-neutral-500 text-sm font-semibold mb-2">Password</Text>
-            <View className="flex-row items-center bg-neutral-100 dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 rounded-lg px-3">
-              <Lock size={20} color="#8b949e" />
-              <TextInput
-                className="flex-1 text-black dark:text-white py-3 px-3 text-base"
-                placeholder="••••••••"
-                placeholderTextColor="#8b949e"
-                secureTextEntry
-                value={password}
-                onChangeText={setPassword}
-              />
-            </View>
-          </View>
 
           <TouchableOpacity 
             className="bg-[#238636] py-3.5 rounded-lg items-center mt-4 border border-[#2ea043]"
             onPress={handleLogin}
           >
-            <Text className="text-white text-base font-bold text-center">Sign In</Text>
+            <Text className="text-white text-base font-bold text-center">Continue</Text>
           </TouchableOpacity>
         </View>
-      </View>
     </SafeAreaView>
   );
 }

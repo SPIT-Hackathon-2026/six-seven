@@ -1,5 +1,5 @@
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -71,6 +71,7 @@ import {
   pullRemote,
   pushRemote,
   isSparseRepo,
+  getPendingConflicts,
 } from '@/services/gitService';
 import { getCacheStats } from '@/services/sparseCacheService';
 import {
@@ -86,7 +87,7 @@ import { stash, stashPop } from '@/services/stashService';
 import { isOnline } from '@/services/networkService';
 import { generateCommitMessage, isAIAvailable } from '@/services/aiService';
 import { enqueuePush, syncRepo } from '@/services/offlineSyncService';
-import { isGitHubLinked, createGitHubRepo, getCachedUsername, listCollaborators, addCollaborator, removeCollaborator } from '@/services/githubAuth';
+import { isGitHubLinked, createGitHubRepo, getCachedUsername, listCollaborators, addCollaborator, removeCollaborator, listPendingInvitations } from '@/services/githubAuth';
 import { withGitLock, checkStaleLock, clearStaleLock, detectGitHealthIssues } from '@/services/safeWriteService';
 import SyntaxHighlighter from '@/components/SyntaxHighlighter';
 
@@ -225,6 +226,7 @@ export default function RepoDetailScreen() {
   const [tags, setTags] = useState<string[]>([])
   const [modFiles, setModFiles] = useState<FileEntry[]>([])
   const [commits, setCommits] = useState<CommitEntry[]>([])
+  const [pendingConflicts, setPendingConflicts] = useState<{theirBranch: string, conflicts: string[]} | null>(null)
   const [repoSize, setRepoSize] = useState('...')
   const [loading, setLoading] = useState(true)
   const [isLazy, setIsLazy] = useState(false)
@@ -279,6 +281,7 @@ export default function RepoDetailScreen() {
    const [collabStatusColor, setCollabStatusColor] = useState('#2ea043');
    const [addingCollab, setAddingCollab] = useState(false);
    const [collaborators, setCollaborators] = useState<any[]>([]);
+   const [pendingInvitations, setPendingInvitations] = useState<any[]>([]);
    const [loadingCollabs, setLoadingCollabs] = useState(false);
    // Handler for adding collaborator
    const handleAddCollaborator = useCallback(async () => {
@@ -300,21 +303,24 @@ export default function RepoDetailScreen() {
        setCollabStatusColor('#2ea043');
        setCollabUsername('');
        await loadCollaborators();
-     } catch (err) {
-       setCollabStatus('Failed to add collaborator');
-       setCollabStatusColor('#f85149');
-     } finally {
-       setAddingCollab(false);
-     }
-   }, [name, collabUsername]);
+      } catch (err: any) {
+        const msg = err?.message ?? 'Failed to add collaborator'
+        setCollabStatus(msg)
+        setCollabStatusColor('#f85149')
+        Alert.alert('Add Collaborator Failed', msg)
+      } finally {
+        setAddingCollab(false);
+      }
+    }, [name, collabUsername, remoteUrl]);
 
    // Parse GitHub owner/repo from remote URL
    const parseGitHubUrl = (url: string): { owner: string; repo: string } | null => {
      try {
-       // Handle https://github.com/owner/repo.git or git@github.com:owner/repo.git
-       const match = url.match(/github\.com[/:](.*?)\/(.*?)(\.git)?$/);
-       if (match) {
-         return { owner: match[1], repo: match[2].replace('.git', '') };
+       // owner allows dots (e.g. orgs) but repo must NOT include dot
+       // so the optional \.git suffix is captured separately
+       const match = url.trim().match(/github\.com[/:]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_-]+)(\.git)?\s*$/)
+       if (match && match[1] && match[2]) {
+         return { owner: match[1], repo: match[2] }
        }
      } catch (err) {
        console.warn('Failed to parse GitHub URL:', err);
@@ -332,15 +338,24 @@ export default function RepoDetailScreen() {
          console.warn('Could not parse GitHub URL:', remoteUrl);
          return;
        }
-       const collabs = await listCollaborators(parsed.owner, parsed.repo);
+       const [collabs, invites] = await Promise.all([
+         listCollaborators(parsed.owner, parsed.repo).catch(() => []),
+         listPendingInvitations(parsed.owner, parsed.repo).catch(() => [])
+       ]);
        setCollaborators(collabs || []);
+       setPendingInvitations(invites || []);
      } catch (err) {
        console.warn('Failed to load collaborators:', err);
        setCollaborators([]);
+       setPendingInvitations([]);
      } finally {
        setLoadingCollabs(false);
      }
    }, [name, ghLinked, remoteUrl]);
+
+   useEffect(() => {
+     loadCollaborators();
+   }, [loadCollaborators]);
 
    // Remove collaborator handler
    const handleRemoveCollaborator = useCallback(async (username: string) => {
@@ -417,18 +432,20 @@ export default function RepoDetailScreen() {
           ],
         )
       }
-      const [br, brs, status, log, tgs, size] = await Promise.all([
+      const [br, brs, status, log, tgs, size, pc] = await Promise.all([
         currentBranch(name).catch(() => 'main'),
         listBranches(name).catch(() => []),
         getStatus(name).catch(() => []),
         getLog(name, { depth: 15 }).catch(() => []),
         listTags(name).catch(() => []),
         getRepoSize(name).catch(() => 0),
+        getPendingConflicts(name).catch(() => null),
       ])
       setBranch(br ?? 'main')
       setBranches(brs)
       setTags(tgs)
       setRepoSize(formatBytes(size))
+      setPendingConflicts(pc)
       setModFiles(
         status
           .filter((s: any) => s.status !== 'unmodified')
@@ -486,14 +503,10 @@ export default function RepoDetailScreen() {
         }
       } catch { /* non-critical */ }
 
-      // Check remote & GitHub link
       const rUrl = await getRemoteUrl(name).catch(() => null)
       setRemoteUrl(rUrl)
       const linked = await isGitHubLinked().catch(() => false)
       setGhLinked(linked)
-      if (linked && rUrl) {
-        loadCollaborators().catch(() => {})
-      }
     } catch (err: any) {
       Alert.alert('Error', err?.message ?? 'Failed to load repo data')
     } finally {
@@ -652,12 +665,23 @@ export default function RepoDetailScreen() {
     }
     setSyncing('pull')
     try {
-      await pullRemote(name)
+      const result = await pullRemote(name)
+      if (result.status === 'conflict') {
+        router.push({
+          pathname: '/repo/[name]/conflicts' as any,
+          params: {
+            name,
+            theirBranch: `origin/${branch}`,
+            conflicts: JSON.stringify(result.conflicts || []),
+          },
+        })
+        return
+      }
       Alert.alert('Pulled', `Pulled from origin/${branch}`)
       await loadRepoData()
     } catch (err: any) {
       if (err?.message?.includes('conflict') || err?.message?.includes('merge')) {
-        Alert.alert('Merge Conflict', 'Pull resulted in conflicts. Resolve them in Source Control.', [
+        Alert.alert('Merge Conflict', 'Pull resulted in conflicts, but could not detect files automatically. Please resolve them.', [
           { text: 'OK' },
         ])
       } else {
@@ -678,7 +702,15 @@ export default function RepoDetailScreen() {
     try {
       const result = await syncRepo(name)
       if (result.status === 'conflict') {
-        Alert.alert('Conflict', result.detail ?? 'Merge conflict detected. Resolve in Source Control.')
+        router.push({
+          pathname: '/repo/[name]/conflicts' as any,
+          params: {
+            name,
+            theirBranch: `origin/${branch}`,
+            conflicts: JSON.stringify(result.conflicts || []),
+          },
+        })
+        return
       } else {
         Alert.alert('Synced', `Status: ${result.status}`)
       }
@@ -1569,7 +1601,7 @@ export default function RepoDetailScreen() {
                         {(compareResults?.length ?? 0) !== 1 ? 's' : ''} changed
                       </Text>
                     </View>
-                    {compareResults?.map((f) => (
+                    {compareResults?.map((f: any) => (
                       <View
                         key={f.filepath}
                         className="flex-row items-center px-4 py-3 border-b border-neutral-100 dark:border-zinc-800"
@@ -1577,16 +1609,16 @@ export default function RepoDetailScreen() {
                         <Text
                           className="text-[11px] font-extrabold w-6 text-center "
                           style={{
-                            color: f.status.includes('added')
+                            color: f.type === 'added'
                               ? '#7ee787'
-                              : f.status.includes('deleted')
+                              : f.type === 'deleted'
                                 ? '#f85149'
                                 : '#d29922',
                           }}
                         >
-                          {f.status.includes('added')
+                          {f.type === 'added'
                             ? '+'
-                            : f.status.includes('deleted')
+                            : f.type === 'deleted'
                               ? '−'
                               : '~'}
                         </Text>
@@ -1764,7 +1796,7 @@ export default function RepoDetailScreen() {
                       <View className="py-3 items-center">
                         <ActivityIndicator size="small" color="#58a6ff" />
                       </View>
-                    ) : collaborators.length === 0 ? (
+                    ) : (collaborators.length === 0 && pendingInvitations.length === 0) ? (
                       <Text className="text-neutral-500 text-xs italic">No collaborators yet</Text>
                     ) : (
                       <View className="rounded-lg bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden">
@@ -1772,7 +1804,7 @@ export default function RepoDetailScreen() {
                           <View
                             key={collab.login}
                             className={`flex-row items-center justify-between px-3 py-2.5 ${
-                              idx < collaborators.length - 1 ? 'border-b border-neutral-100 dark:border-zinc-800' : ''
+                              (idx < collaborators.length - 1 || pendingInvitations.length > 0) ? 'border-b border-neutral-100 dark:border-zinc-800' : ''
                             }`}
                           >
                             <View className="flex-row items-center gap-2 flex-1">
@@ -1799,6 +1831,34 @@ export default function RepoDetailScreen() {
                             >
                               <Text className="text-red-600 dark:text-red-400 text-xs font-semibold">Remove</Text>
                             </TouchableOpacity>
+                          </View>
+                        ))}
+                        
+                        {/* Pending Invitations Section */}
+                        {pendingInvitations.map((invite, idx) => (
+                          <View
+                            key={`invite-${invite.id}`}
+                            className={`flex-row items-center justify-between bg-neutral-50 dark:bg-zinc-800/50 px-3 py-2.5 ${
+                              idx < pendingInvitations.length - 1 ? 'border-b border-neutral-100 dark:border-zinc-800' : ''
+                            }`}
+                          >
+                            <View className="flex-row items-center gap-2 flex-1">
+                              <View className="w-6 h-6 rounded-full bg-neutral-200 dark:bg-zinc-700 items-center justify-center">
+                                <Text className="text-[10px]">✉️</Text>
+                              </View>
+                              <View className="flex-1">
+                                <Text className="text-neutral-600 dark:text-neutral-300 text-sm font-medium">
+                                  {invite?.invitee?.login ?? 'Unknown User'}
+                                </Text>
+                                <Text className="text-neutral-400 text-[10px]">
+                                  Pending Invite {invite?.permissions === 'admin' ? '(Admin)' : invite?.permissions === 'write' ? '(Write)' : ''}
+                                </Text>
+                              </View>
+                            </View>
+                            {/* We don't have delete invite implemented yet, but we could add it */}
+                            <View className="px-2 py-1 rounded bg-neutral-100 dark:bg-zinc-800 border border-neutral-200 dark:border-zinc-700">
+                              <Text className="text-neutral-500 dark:text-neutral-400 text-[10px] font-semibold">Waiting</Text>
+                            </View>
                           </View>
                         ))}
                       </View>
@@ -1955,7 +2015,31 @@ export default function RepoDetailScreen() {
             )}
 
             {/* Commit message + AI button */}
-            <View className="mt-4 flex-row items-start gap-2">
+            {pendingConflicts && pendingConflicts.conflicts.length > 0 ? (
+              <View className="mt-4 p-4 rounded-xl bg-orange-500/10 border border-orange-500/20">
+                <Text className="text-orange-500 font-bold text-sm mb-1">⚠️ Merge Conflicts</Text>
+                <Text className="text-orange-400 text-xs mb-3">
+                  You must resolve all conflicts before committing.
+                </Text>
+                <TouchableOpacity
+                  className="py-3 rounded-lg bg-orange-600 items-center"
+                  onPress={() => {
+                    router.push({
+                      pathname: '/repo/[name]/conflicts' as any,
+                      params: {
+                        name,
+                        theirBranch: pendingConflicts.theirBranch, // Contains remote or the branched merged from
+                        conflicts: JSON.stringify(pendingConflicts.conflicts),
+                      },
+                    })
+                  }}
+                >
+                  <Text className="text-white text-sm font-bold">Resolve Conflicts</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <View className="mt-4 flex-row items-start gap-2">
               <TextInput
                 className="flex-1 bg-white dark:bg-black text-black dark:text-neutral-100 px-4 py-3.5 rounded-xl border border-neutral-200 dark:border-zinc-800 text-sm"
                 placeholder="Commit message (tap ✨ to generate)"
@@ -1994,7 +2078,9 @@ export default function RepoDetailScreen() {
               ) : (
                 <Text className="text-white text-sm font-bold">Commit</Text>
               )}
-            </TouchableOpacity>
+                </TouchableOpacity>
+              </>
+            )}
 
             {/* Status summary */}
             <View className="mt-5 rounded-xl bg-white dark:bg-zinc-900 border border-neutral-200 dark:border-zinc-800 overflow-hidden ">
@@ -2022,18 +2108,22 @@ export default function RepoDetailScreen() {
                       <Text
                         className="text-[11px] font-extrabold w-6 text-center"
                         style={{
-                          color: f.status.includes('added')
-                            ? '#7ee787'
-                            : f.status.includes('deleted')
-                              ? '#f85149'
-                              : '#d29922',
+                          color: pendingConflicts?.conflicts.includes(f.filepath)
+                            ? '#f97316' // orange-500
+                            : f.status.includes('added')
+                              ? '#7ee787'
+                              : f.status.includes('deleted')
+                                ? '#f85149'
+                                : '#d29922',
                         }}
                       >
-                        {f.status.includes('added')
-                          ? 'A'
-                          : f.status.includes('deleted')
-                            ? 'D'
-                            : 'M'}
+                        {pendingConflicts?.conflicts.includes(f.filepath)
+                          ? 'C'
+                          : f.status.includes('added')
+                            ? 'A'
+                            : f.status.includes('deleted')
+                              ? 'D'
+                              : 'M'}
                       </Text>
                       <Text
                         className="text-black dark:text-neutral-200 text-xs font-medium flex-1 ml-1"

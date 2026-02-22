@@ -18,7 +18,7 @@ import {
 } from '@/services/gitService'
 
 /* ─────────── types ─────────── */
-type ChangedFile = { filepath: string; status: string }
+type ChangedFile = { filepath: string; type: string }
 type DiffView = {
   filepath: string
   oldContent: string | null
@@ -315,7 +315,7 @@ export default function CompareScreen() {
                 </View>
                 <View className="items-center">
                   <Text className="text-[#7ee787] text-xl font-bold">
-                    {changes.filter((c) => c.status.includes('added')).length}
+                    {changes.filter((c) => c.type === 'added').length}
                   </Text>
                   <Text className="text-neutral-500 text-[11px] font-bold uppercase tracking-wider mt-1">Added</Text>
                 </View>
@@ -324,8 +324,8 @@ export default function CompareScreen() {
                     {
                       changes.filter(
                         (c) =>
-                          c.status.includes('modified') ||
-                          c.status === 'unknown',
+                          c.type === 'modified' ||
+                          c.type === 'unknown',
                       ).length
                     }
                   </Text>
@@ -333,7 +333,7 @@ export default function CompareScreen() {
                 </View>
                 <View className="items-center">
                   <Text className="text-[#f85149] text-xl font-bold">
-                    {changes.filter((c) => c.status.includes('deleted')).length}
+                    {changes.filter((c) => c.type === 'deleted').length}
                   </Text>
                   <Text className="text-neutral-500 text-[11px] font-bold uppercase tracking-wider mt-1">Deleted</Text>
                 </View>

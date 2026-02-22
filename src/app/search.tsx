@@ -9,6 +9,7 @@ import {
   Keyboard,
   Animated,
 } from 'react-native'
+import { useColorScheme } from 'nativewind'
 import { useFocusEffect, useRouter } from 'expo-router'
 import {
   Search,
@@ -80,6 +81,8 @@ const CATEGORIES = [
 
 /* ═══════════ COMPONENT ═══════════ */
 export default function SearchScreen() {
+  const { colorScheme } = useColorScheme()
+  const isDark = colorScheme === 'dark'
   const router = useRouter()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
@@ -161,7 +164,7 @@ export default function SearchScreen() {
 
   /* ═══ RENDER ═══ */
   return (
-    <View style={{ flex: 1, backgroundColor: '#000000' }}>
+    <View style={{ flex: 1, backgroundColor: isDark ? '#000000' : '#ffffff' }}>
 
       {/* ─── Header ─── */}
       <View
@@ -169,9 +172,9 @@ export default function SearchScreen() {
           paddingTop: 16,
           paddingBottom: 16,
           paddingHorizontal: 20,
-          backgroundColor: '#000000',
+          backgroundColor: isDark ? '#000000' : '#ffffff',
           borderBottomWidth: 1,
-          borderBottomColor: '#111111',
+          borderBottomColor: isDark ? '#111111' : '#f5f5f5',
         }}
       >
         {/* Title row */}
@@ -192,10 +195,10 @@ export default function SearchScreen() {
             <Sparkles size={18} color="#58a6ff" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ color: '#e6edf3', fontSize: 20, fontWeight: '700', letterSpacing: -0.5 }}>
+            <Text style={{ color: isDark ? '#e6edf3' : '#000000', fontSize: 20, fontWeight: '700', letterSpacing: -0.5 }}>
               Smart Search
             </Text>
-            <Text style={{ color: '#484f58', fontSize: 11, marginTop: 1 }}>
+            <Text style={{ color: isDark ? '#484f58' : '#737373', fontSize: 11, marginTop: 1 }}>
               Natural language · AI-powered
             </Text>
           </View>
@@ -224,19 +227,19 @@ export default function SearchScreen() {
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            backgroundColor: '#0a0a0a',
+            backgroundColor: isDark ? '#0a0a0a' : '#fafafa',
             borderRadius: 14,
             borderWidth: 1.5,
-            borderColor: inputFocused ? '#58a6ff' : '#222222',
+            borderColor: inputFocused ? '#58a6ff' : isDark ? '#222222' : '#d4d4d4',
             paddingHorizontal: 14,
             height: 48,
           }}
         >
-          <Search size={18} color={inputFocused ? '#58a6ff' : '#484f58'} />
+          <Search size={18} color={inputFocused ? '#58a6ff' : isDark ? '#484f58' : '#737373'} />
           <TextInput
             style={{
               flex: 1,
-              color: '#e6edf3',
+              color: isDark ? '#e6edf3' : '#000000',
               fontSize: 14,
               marginHorizontal: 10,
               height: '100%',
@@ -262,12 +265,12 @@ export default function SearchScreen() {
                 paddingHorizontal: 8,
                 paddingVertical: 3,
                 borderRadius: 6,
-                backgroundColor: '#1a1a1a',
+                backgroundColor: isDark ? '#1a1a1a' : '#e5e5e5',
                 borderWidth: 1,
-                borderColor: '#222',
+                borderColor: isDark ? '#222' : '#d4d4d4',
               }}
             >
-              <Text style={{ color: '#484f58', fontSize: 10, fontWeight: '600' }}>↵</Text>
+              <Text style={{ color: isDark ? '#484f58' : '#737373', fontSize: 10, fontWeight: '600' }}>↵</Text>
             </View>
           )}
         </View>
@@ -289,14 +292,14 @@ export default function SearchScreen() {
                   paddingHorizontal: 12,
                   paddingVertical: 5,
                   borderRadius: 20,
-                  backgroundColor: isSelected ? '#58a6ff18' : '#0a0a0a',
+                  backgroundColor: isSelected ? '#58a6ff18' : isDark ? '#0a0a0a' : '#fafafa',
                   borderWidth: 1,
-                  borderColor: isSelected ? '#58a6ff55' : '#1a1a1a',
+                  borderColor: isSelected ? '#58a6ff55' : isDark ? '#1a1a1a' : '#e5e5e5',
                 }}
               >
                 <Text
                   style={{
-                    color: isSelected ? '#58a6ff' : '#484f58',
+                    color: isSelected ? '#58a6ff' : isDark ? '#484f58' : '#737373',
                     fontSize: 12,
                     fontWeight: isSelected ? '700' : '500',
                   }}
@@ -318,7 +321,7 @@ export default function SearchScreen() {
         {searching && (
           <View style={{ marginTop: 60, alignItems: 'center', gap: 12 }}>
             <ActivityIndicator color="#58a6ff" size="large" />
-            <Text style={{ color: '#484f58', fontSize: 13 }}>Searching commits…</Text>
+            <Text style={{ color: isDark ? '#484f58' : '#737373', fontSize: 13 }}>Searching commits…</Text>
           </View>
         )}
 
@@ -345,11 +348,11 @@ export default function SearchScreen() {
               {aiEnabled && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <Sparkles size={10} color="#d2a8ff" />
-                  <Text style={{ color: '#484f58', fontSize: 11 }}>AI-ranked</Text>
+                  <Text style={{ color: isDark ? '#484f58' : '#737373', fontSize: 11 }}>AI-ranked</Text>
                 </View>
               )}
               <View style={{ flex: 1 }} />
-              <Text style={{ color: '#333333', fontSize: 11 }}>"{query}"</Text>
+              <Text style={{ color: isDark ? '#333333' : '#a3a3a3', fontSize: 11 }}>"{query}"</Text>
             </View>
 
             {/* AI Intent card */}
@@ -396,15 +399,15 @@ export default function SearchScreen() {
                         paddingHorizontal: 12,
                         paddingVertical: 6,
                         borderRadius: 20,
-                        backgroundColor: isActive ? '#58a6ff' : '#0a0a0a',
+                        backgroundColor: isActive ? '#58a6ff' : isDark ? '#0a0a0a' : '#fafafa',
                         borderWidth: 1,
-                        borderColor: isActive ? '#58a6ff' : '#1a1a1a',
+                        borderColor: isActive ? '#58a6ff' : isDark ? '#1a1a1a' : '#e5e5e5',
                       }}
                     >
-                      <CatIcon size={11} color={isActive ? '#fff' : '#484f58'} />
+                      <CatIcon size={11} color={isActive ? '#fff' : isDark ? '#484f58' : '#737373'} />
                       <Text
                         style={{
-                          color: isActive ? '#fff' : '#484f58',
+                          color: isActive ? '#fff' : isDark ? '#484f58' : '#737373',
                           fontSize: 12,
                           fontWeight: isActive ? '700' : '500',
                         }}
@@ -423,27 +426,27 @@ export default function SearchScreen() {
                 style={{
                   alignItems: 'center',
                   paddingVertical: 48,
-                  backgroundColor: '#0a0a0a',
+                  backgroundColor: isDark ? '#0a0a0a' : '#fafafa',
                   borderRadius: 16,
                   borderWidth: 1,
-                  borderColor: '#1a1a1a',
+                  borderColor: isDark ? '#1a1a1a' : '#e5e5e5',
                 }}
               >
                 <Search size={36} color="#484f58" style={{ marginBottom: 12 }} />
-                <Text style={{ color: '#8b949e', fontSize: 15, fontWeight: '700', marginBottom: 4 }}>
+                <Text style={{ color: isDark ? '#8b949e' : '#737373', fontSize: 15, fontWeight: '700', marginBottom: 4 }}>
                   No commits found
                 </Text>
-                <Text style={{ color: '#333333', fontSize: 12, textAlign: 'center', maxWidth: 220 }}>
+                <Text style={{ color: isDark ? '#333333' : '#a3a3a3', fontSize: 12, textAlign: 'center', maxWidth: 220 }}>
                   Try a broader query or select a different repo
                 </Text>
               </View>
             ) : (
               <View
                 style={{
-                  backgroundColor: '#0a0a0a',
+                  backgroundColor: isDark ? '#0a0a0a' : '#fafafa',
                   borderRadius: 16,
                   borderWidth: 1,
-                  borderColor: '#1a1a1a',
+                  borderColor: isDark ? '#1a1a1a' : '#e5e5e5',
                   overflow: 'hidden',
                 }}
               >
@@ -461,7 +464,7 @@ export default function SearchScreen() {
                       style={{
                         padding: 16,
                         borderBottomWidth: isLast ? 0 : 1,
-                        borderBottomColor: '#111111',
+                        borderBottomColor: isDark ? '#111111' : '#f5f5f5',
                       }}
                     >
                       <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -488,7 +491,7 @@ export default function SearchScreen() {
                           {/* Commit message */}
                           <Text
                             style={{
-                              color: '#e6edf3',
+                              color: isDark ? '#e6edf3' : '#000000',
                               fontSize: 13,
                               fontWeight: '600',
                               lineHeight: 19,
@@ -511,13 +514,13 @@ export default function SearchScreen() {
                             >
                               {r.shortOid}
                             </Text>
-                            <Text style={{ color: '#1a1a1a' }}>·</Text>
-                            <Text style={{ color: '#484f58', fontSize: 11 }}>{r.author}</Text>
-                            <Text style={{ color: '#1a1a1a' }}>·</Text>
-                            <Text style={{ color: '#333333', fontSize: 11 }}>{timeAgo(r.timestamp)}</Text>
+                            <Text style={{ color: isDark ? '#1a1a1a' : '#e5e5e5' }}>·</Text>
+                            <Text style={{ color: isDark ? '#484f58' : '#737373', fontSize: 11 }}>{r.author}</Text>
+                            <Text style={{ color: isDark ? '#1a1a1a' : '#e5e5e5' }}>·</Text>
+                            <Text style={{ color: isDark ? '#333333' : '#a3a3a3', fontSize: 11 }}>{timeAgo(r.timestamp)}</Text>
                             {selectedRepo === null && (
                               <>
-                                <Text style={{ color: '#1a1a1a' }}>·</Text>
+                                <Text style={{ color: isDark ? '#1a1a1a' : '#e5e5e5' }}>·</Text>
                                 <View
                                   style={{
                                     paddingHorizontal: 6,
@@ -544,7 +547,7 @@ export default function SearchScreen() {
                                   flex: 1,
                                   height: 3,
                                   borderRadius: 2,
-                                  backgroundColor: '#111111',
+                                  backgroundColor: isDark ? '#111111' : '#f5f5f5',
                                 }}
                               >
                                 <View
@@ -557,11 +560,11 @@ export default function SearchScreen() {
                                         ? '#7ee787'
                                         : relevance >= 40
                                           ? '#58a6ff'
-                                          : '#484f58',
+                                          : isDark ? '#484f58' : '#737373',
                                   }}
                                 />
                               </View>
-                              <Text style={{ color: '#333333', fontSize: 10 }}>{relevance}%</Text>
+                              <Text style={{ color: isDark ? '#333333' : '#a3a3a3', fontSize: 10 }}>{relevance}%</Text>
                             </View>
                           )}
 
@@ -608,7 +611,7 @@ export default function SearchScreen() {
               <View style={{ marginBottom: 24 }}>
                 <Text
                   style={{
-                    color: '#333333',
+                    color: isDark ? '#333333' : '#a3a3a3',
                     fontSize: 10,
                     fontWeight: '800',
                     letterSpacing: 1.2,
@@ -621,10 +624,10 @@ export default function SearchScreen() {
                 </Text>
                 <View
                   style={{
-                    backgroundColor: '#0a0a0a',
+                    backgroundColor: isDark ? '#0a0a0a' : '#fafafa',
                     borderRadius: 14,
                     borderWidth: 1,
-                    borderColor: '#1a1a1a',
+                    borderColor: isDark ? '#1a1a1a' : '#e5e5e5',
                     overflow: 'hidden',
                   }}
                 >
@@ -639,11 +642,11 @@ export default function SearchScreen() {
                         paddingHorizontal: 16,
                         paddingVertical: 13,
                         borderBottomWidth: idx < recentQueries.length - 1 ? 1 : 0,
-                        borderBottomColor: '#111111',
+                        borderBottomColor: isDark ? '#111111' : '#f5f5f5',
                       }}
                     >
                       <Clock size={14} color="#333333" />
-                      <Text style={{ color: '#8b949e', fontSize: 13, flex: 1 }}>{rq}</Text>
+                      <Text style={{ color: isDark ? '#8b949e' : '#737373', fontSize: 13, flex: 1 }}>{rq}</Text>
                       <ArrowRight size={13} color="#1a1a1a" />
                     </TouchableOpacity>
                   ))}
@@ -654,7 +657,7 @@ export default function SearchScreen() {
             {/* Suggested queries — grid of chips */}
             <Text
               style={{
-                color: '#333333',
+                color: isDark ? '#333333' : '#a3a3a3',
                 fontSize: 10,
                 fontWeight: '800',
                 letterSpacing: 1.2,
@@ -677,12 +680,12 @@ export default function SearchScreen() {
                     paddingHorizontal: 12,
                     paddingVertical: 8,
                     borderRadius: 20,
-                    backgroundColor: '#0a0a0a',
+                    backgroundColor: isDark ? '#0a0a0a' : '#fafafa',
                     borderWidth: 1,
-                    borderColor: '#1a1a1a',
+                    borderColor: isDark ? '#1a1a1a' : '#e5e5e5',
                   }}
                 >
-                  <Text style={{ color: '#8b949e', fontSize: 12, fontWeight: '500' }}>{s.text}</Text>
+                  <Text style={{ color: isDark ? '#8b949e' : '#737373', fontSize: 12, fontWeight: '500' }}>{s.text}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -692,18 +695,18 @@ export default function SearchScreen() {
               style={{
                 padding: 16,
                 borderRadius: 14,
-                backgroundColor: '#0a0a0a',
+                backgroundColor: isDark ? '#0a0a0a' : '#fafafa',
                 borderWidth: 1,
-                borderColor: '#1a1a1a',
+                borderColor: isDark ? '#1a1a1a' : '#e5e5e5',
               }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                 <Sparkles size={14} color="#58a6ff" />
-                <Text style={{ color: '#e6edf3', fontSize: 13, fontWeight: '700' }}>
+                <Text style={{ color: isDark ? '#e6edf3' : '#000000', fontSize: 13, fontWeight: '700' }}>
                   How Smart Search Works
                 </Text>
               </View>
-              <Text style={{ color: '#484f58', fontSize: 12, lineHeight: 19, marginBottom: 12 }}>
+              <Text style={{ color: isDark ? '#484f58' : '#737373', fontSize: 12, lineHeight: 19, marginBottom: 12 }}>
                 Type naturally — it understands{' '}
                 <Text style={{ color: '#d2a8ff', fontWeight: '600' }}>authors</Text>,{' '}
                 <Text style={{ color: '#58a6ff', fontWeight: '600' }}>file names</Text>,{' '}
@@ -720,13 +723,13 @@ export default function SearchScreen() {
                   <View
                     key={i}
                     style={{
-                      backgroundColor: '#111111',
+                      backgroundColor: isDark ? '#111111' : '#f5f5f5',
                       borderRadius: 8,
                       paddingHorizontal: 12,
                       paddingVertical: 7,
                     }}
                   >
-                    <Text style={{ color: '#484f58', fontSize: 11, fontFamily: 'monospace' }}>
+                    <Text style={{ color: isDark ? '#484f58' : '#737373', fontSize: 11, fontFamily: 'monospace' }}>
                       {tip}
                     </Text>
                   </View>
